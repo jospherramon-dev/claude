@@ -19,6 +19,9 @@ este repositorio de GitHub.
 Listo. A partir de ahí abres el bot desde ese ícono del Escritorio: se abre en
 su **propia ventana**, no en el navegador.
 
+> El acceso directo usa el logo **JPH.BOT** (`icono.ico`). Si cambias el logo,
+> vuelve a ejecutar `instalar.bat` para refrescar el ícono del Escritorio.
+
 > La primera vez, Windows puede pedir instalar el runtime **WebView2** (viene de
 > serie en Windows 10/11 actualizados). Si hiciera falta, se descarga de Microsoft.
 
