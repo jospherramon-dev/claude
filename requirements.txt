@@ -2,3 +2,4 @@
 requests>=2.25
 iqoptionapi
 pywebview>=4.0
+websocket-client>=1.0   # conexión con Deriv (índices sintéticos)

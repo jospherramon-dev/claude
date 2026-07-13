@@ -56,8 +56,11 @@ variable de entorno `BOT_IFC_GH_TOKEN`. Si el repo es público, no hace falta na
 ## 3) Uso diario
 
 - Abre **"Bot IFC Auto"** desde el Escritorio.
-- Pon tu usuario/contraseña de IQ Option, elige modo (PRACTICE/REAL) y dale a
-  **Iniciar bot**.
+- Elige el **Bróker**: **IQ Option** (forex/OTC) o **Deriv** (índices sintéticos).
+  Puedes cambiar entre ellos cuando quieras — cada uno guarda sus credenciales.
+  - IQ Option: usuario/contraseña.
+  - Deriv: token de API (ver **`docs/DERIV.md`** para la guía paso a paso).
+- Elige modo (PRACTICE/REAL) y dale a **Iniciar bot**.
 - Herramientas incluidas en el panel: diagnóstico de pares, backtest y
   estadísticas (con exportación a Excel/CSV).
 

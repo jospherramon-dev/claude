@@ -26,14 +26,28 @@
 import time, json, os, threading, traceback, datetime, requests, math
 import csv as _csv
 import io as _io
-from iqoptionapi.stable_api import IQ_Option
+try:
+    from iqoptionapi.stable_api import IQ_Option
+except Exception:
+    IQ_Option = None   # permite usar el bot en modo Deriv sin iqoptionapi
+from brokers import crear_conector, broker_actual
 
 # =============================================================
 # CONFIGURACIÓN
 # =============================================================
 config = {
+    # ── BRÓKER ACTIVO ────────────────────────────────────────────────
+    # "iq"    -> IQ Option (forex/OTC). Usa usuario + password.
+    # "deriv" -> Deriv (índices sintéticos). Usa deriv_token (NO password).
+    # Puedes cambiar de bróker cuando quieras desde el panel; cada uno
+    # guarda sus propias credenciales y su propia lista de pares.
+    "broker":               "iq",
     "usuario":              "",
     "password":             "",
+    # Credenciales / ajustes de Deriv
+    "deriv_token":          "",
+    "deriv_app_id":         "1089",   # app_id público de pruebas de Deriv
+    "pares_deriv":          ["R_75", "R_100", "R_50"],
     "modo":                 "PRACTICE",   # "PRACTICE" o "REAL"
     "pares":                ["EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "EURGBP-OTC"],
     # ── Mercado normal (forex real, sin "-OTC") ───────────────────────
@@ -516,6 +530,22 @@ def cargar_config():
 def guardar_config():
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def _faltan_credenciales(cfg):
+    """Devuelve un mensaje de error si faltan credenciales para el bróker
+    activo, o "" si están completas. Deriv usa token; IQ usa usuario+clave."""
+    if broker_actual(cfg) == "deriv":
+        if not (cfg.get("deriv_token") or "").strip():
+            return ("Falta el token de Deriv. En el panel, pega tu token de "
+                    "Deriv (Settings → API token) y guarda la configuración.")
+        return ""
+    usuario  = (cfg.get("usuario") or "").strip()
+    password = cfg.get("password") or ""
+    if not usuario or not password:
+        return ("Falta email o contraseña de IQ Option. Escríbelos en "
+                "Configuración y guarda (o inicia el bot una vez).")
+    return ""
 
 
 # =============================================================
@@ -3278,16 +3308,13 @@ def _asegurar_conexion_datos():
             return False, ("El bot está iniciando o reconectando. Espera unos "
                            "segundos a que diga 'Conectado' y reintenta.")
         cargar_config()
-        usuario  = (config.get("usuario") or "").strip()
-        password = config.get("password") or ""
-        if not usuario or not password:
-            return False, ("No hay credenciales guardadas. Escribe tu email y "
-                           "contraseña en Configuración y pulsa 'Guardar "
-                           "configuración' (o inicia el bot una vez).")
+        faltan = _faltan_credenciales(config)
+        if faltan:
+            return False, faltan
         log("[DATOS] Conectando a la plataforma en modo solo-datos "
             "(backtest/detección sin iniciar el bot)...")
         try:
-            iq = IQ_Option(usuario, password)
+            iq = crear_conector(config)
             completo, res, exc = _con_timeout(iq.connect, 45)
             if not completo:
                 return False, "La conexión tardó demasiado. Revisa tu internet y reintenta."
@@ -5122,9 +5149,10 @@ def _forzar_reconexion(motivo=""):
 def loop_bot(mi_run_id):
     global _Iq
 
-    log("Conectando con IQ Option...")
+    _nombre_broker = "Deriv" if broker_actual(config) == "deriv" else "IQ Option"
+    log(f"Conectando con {_nombre_broker}...")
     try:
-        _Iq = IQ_Option(config["usuario"], config["password"])
+        _Iq = crear_conector(config)
         completo, conn_result, exc = _con_timeout(_Iq.connect, 25)
         if not completo:
             log("Conexión inicial colgada (sin respuesta tras 25s). Revisa tu internet e inicia de nuevo.")
@@ -5184,9 +5212,19 @@ def loop_bot(mi_run_id):
     # opción de mercado normal, se agregan SOLO los pares normales que
     # la API reporte como abiertos en este momento (nunca se fuerza un
     # par cerrado).
-    pares_a_operar = list(config["pares"])
+    # Bróker DERIV: se operan los índices sintéticos configurados. El
+    # escáner y la auto-calibración son de forex y NO aplican a sintéticos,
+    # así que se saltan (se opera la lista tal cual, como en modo manual).
+    _es_deriv = broker_actual(config) == "deriv"
+    if _es_deriv:
+        pares_a_operar = list(config.get("pares_deriv") or [])
+        log(f"[MODO] Bróker DERIV — operando sintéticos ({len(pares_a_operar)}): "
+            f"{', '.join(pares_a_operar) or '(lista vacía: configura pares_deriv)'}. "
+            f"Escáner/auto-calibración de forex desactivados para este bróker.")
+    else:
+        pares_a_operar = list(config["pares"])
     abiertos = []
-    if config.get("pares_normales_activo", False):
+    if config.get("pares_normales_activo", False) and not _es_deriv:
         deseados = config.get("pares_normales", [])
         abiertos, _hubo_fallo_inicial = obtener_pares_normales_abiertos(deseados)
         if abiertos:
@@ -5214,6 +5252,7 @@ def loop_bot(mi_run_id):
     # la estrategia IFC, que es la que tiene modos calibrables. ─────────
     autocal_ok = False
     if (modo_op != "manual"
+            and not _es_deriv
             and config.get("autocalibracion_activa", False)
             and config.get("estrategia", "ifc") == "ifc"):
         candidatos_cal = list(dict.fromkeys(
@@ -5243,7 +5282,7 @@ def loop_bot(mi_run_id):
     # normales que estén abiertos) y se queda SOLO con los scanner_top_n
     # de mejor tendencia. Después, los hilos de señales IFC trabajan
     # únicamente con esos elegidos.
-    if modo_op != "manual" and not autocal_ok and config.get("scanner_activo", False):
+    if modo_op != "manual" and not _es_deriv and not autocal_ok and config.get("scanner_activo", False):
         candidatos = list(dict.fromkeys(
             list(config.get("scanner_candidatos_otc", [])) +
             list(config.get("pares", [])) +
@@ -5714,6 +5753,10 @@ def set_config(nueva):
     if nueva is not None and "password" in nueva and not nueva.get("password"):
         nueva = dict(nueva)
         nueva.pop("password", None)
+    # Mismo blindaje para el token de Deriv: si viene vacío, no lo borramos.
+    if nueva is not None and "deriv_token" in nueva and not nueva.get("deriv_token"):
+        nueva = dict(nueva)
+        nueva.pop("deriv_token", None)
     config.update(nueva)
     guardar_config()
 

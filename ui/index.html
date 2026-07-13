@@ -152,9 +152,32 @@
   <!-- Sidebar -->
   <div class="sidebar">
     <div>
+      <div class="slabel">Bróker</div>
+      <div class="field"><label>Plataforma a operar</label>
+        <select id="cbroker" onchange="onBrokerChange()">
+          <option value="iq">IQ Option (forex / OTC)</option>
+          <option value="deriv">Deriv (índices sintéticos)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="secIQ">
       <div class="slabel">Cuenta IQ Option</div>
       <div class="field"><label>Email</label><input type="email" id="cu" placeholder="tu@email.com"></div>
       <div class="field"><label>Contraseña</label><input type="password" id="cp" placeholder="••••••••"></div>
+    </div>
+
+    <div id="secDeriv" style="display:none;">
+      <div class="slabel">Cuenta Deriv</div>
+      <div class="field"><label>Token de API</label><input type="password" id="cderivtoken" placeholder="pega tu token de Deriv"></div>
+      <div class="field"><label>App ID</label><input type="text" id="cderivappid" placeholder="1089"></div>
+      <div class="field"><label>Índices sintéticos (separados por coma)</label><input type="text" id="cparesderiv" placeholder="R_75, R_100, R_50"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;line-height:1.5;">
+        El token se genera en Deriv → <b>Settings → API token</b>. Para practicar, créalo desde tu cuenta <b>DEMO (virtual)</b>.
+      </div>
+    </div>
+
+    <div>
       <div class="field"><label>Modo</label>
         <select id="cm">
           <option value="PRACTICE">Demo (recomendado)</option>
@@ -874,13 +897,26 @@ function toggleMartingala(activa) {
   }
 }
 
+function onBrokerChange() {
+  const b = document.getElementById('cbroker').value;
+  const esDeriv = (b === 'deriv');
+  document.getElementById('secIQ').style.display    = esDeriv ? 'none' : '';
+  document.getElementById('secDeriv').style.display = esDeriv ? '' : 'none';
+}
+
 function getCfg() {
   const riesgoPct  = parseFloat(document.getElementById('cr').value)||2;
   const montoMin   = parseFloat(document.getElementById('cmin').value)||1;
   const montoMax   = parseFloat(document.getElementById('cmax').value)||50;
+  const paresDerivRaw = (document.getElementById('cparesderiv').value||'')
+      .split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
   return {
+    broker:               document.getElementById('cbroker').value,
     usuario:              document.getElementById('cu').value,
     password:             document.getElementById('cp').value,
+    deriv_token:          document.getElementById('cderivtoken').value,
+    deriv_app_id:         (document.getElementById('cderivappid').value||'1089').trim(),
+    pares_deriv:          paresDerivRaw,
     modo:                 document.getElementById('cm').value,
     token_telegram:       document.getElementById('ct').value,
     chat_id:              document.getElementById('cc').value,
@@ -933,6 +969,14 @@ async function cargarCfg() {
     } else {
       cp.placeholder = '••••••••';
     }
+    // Bróker + credenciales de Deriv
+    document.getElementById('cbroker').value = c.broker || 'iq';
+    document.getElementById('cderivappid').value = c.deriv_app_id || '1089';
+    document.getElementById('cparesderiv').value = (c.pares_deriv || []).join(', ');
+    const dt = document.getElementById('cderivtoken');
+    dt.value = '';   // el servidor no devuelve el token (secreto)
+    dt.placeholder = c.has_deriv_token ? 'token guardado (re-escribe para cambiarlo)' : 'pega tu token de Deriv';
+    onBrokerChange();
     document.getElementById('cm').value   = c.modo||'PRACTICE';
     document.getElementById('ct').value   = c.token_telegram||'';
     document.getElementById('cc').value   = c.chat_id||'';
@@ -984,7 +1028,18 @@ async function cargarCfg() {
 // ── Control bot ───────────────────────────────────────────────
 async function iniciarBot() {
   const c = getCfg();
-  if (!c.usuario||!c.password){alert('Ingresa email y contraseña primero.');return;}
+  if (c.broker === 'deriv') {
+    // El token puede estar guardado en el servidor (campo vacío = usar guardado).
+    if (!c.deriv_token && !(document.getElementById('cderivtoken').placeholder.indexOf('guardado')>=0)) {
+      alert('Pega tu token de Deriv primero.'); return;
+    }
+    if (!c.pares_deriv || !c.pares_deriv.length) {
+      alert('Configura al menos un índice sintético (ej: R_75, R_100).'); return;
+    }
+  } else {
+    const clavePuesta = c.password || (document.getElementById('cp').placeholder.indexOf('re-escribe')>=0);
+    if (!c.usuario || !clavePuesta){alert('Ingresa email y contraseña primero.');return;}
+  }
   document.getElementById('btnI').disabled = true;
   document.getElementById('btnD').disabled = false;
   document.getElementById('btnR').disabled = true;

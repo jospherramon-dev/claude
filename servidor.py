@@ -318,6 +318,10 @@ class Handler(BaseHTTPRequestHandler):
             pwd = cfg_public.get("password", "")
             cfg_public["password"] = ""
             cfg_public["has_password"] = bool(pwd)
+            # El token de Deriv también es secreto: no lo devolvemos.
+            tok = cfg_public.get("deriv_token", "")
+            cfg_public["deriv_token"] = ""
+            cfg_public["has_deriv_token"] = bool(tok)
             self._json(200, cfg_public)
 
         else:
@@ -339,10 +343,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/iniciar":
             if data:
                 bot.set_config(data)
-            u = bot.config.get("usuario", "")
-            p = bot.config.get("password", "")
-            if not u or not p:
-                self._json(200, {"ok": False, "error": "Falta email o contraseña"})
+            faltan = bot._faltan_credenciales(bot.config)
+            if faltan:
+                self._json(200, {"ok": False, "error": faltan})
                 return
             bot.iniciar_bot()
             self._json(200, {"ok": True})
