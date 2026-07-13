@@ -147,10 +147,15 @@ def descargar_y_aplicar():
             return (False, "El paquete descargado venía vacío.")
         raiz = os.path.join(tmp, entradas[0])
 
+        # IMPORTANTE: VERSION se copia SIEMPRE al final. Si la copia falla a
+        # mitad (disco lleno, antivirus...), VERSION queda con el número viejo
+        # y el próximo arranque REINTENTA la actualización, en vez de creer
+        # que ya está al día con código a medias.
+        nombres = [n for n in os.listdir(raiz) if n not in _PRESERVAR]
+        nombres.sort(key=lambda n: n == "VERSION")   # VERSION al final
+
         copiados = 0
-        for nombre in os.listdir(raiz):
-            if nombre in _PRESERVAR:
-                continue
+        for nombre in nombres:
             origen  = os.path.join(raiz, nombre)
             destino = os.path.join(BASE_DIR, nombre)
             try:
@@ -162,6 +167,8 @@ def descargar_y_aplicar():
             except Exception as e:
                 return (False, f"Fallo al copiar '{nombre}': {e}")
 
+        _instalar_dependencias()
+
         return (True, f"Actualización aplicada ({copiados} elementos). Se reiniciará la app.")
     finally:
         try:
@@ -170,14 +177,39 @@ def descargar_y_aplicar():
             pass
 
 
+def _instalar_dependencias():
+    """Instala las dependencias del requirements.txt recién descargado, por si
+    la versión nueva añadió alguna librería. Si falla, no aborta la
+    actualización: la app arrancará y el error se verá en consola."""
+    req = os.path.join(BASE_DIR, "requirements.txt")
+    if not os.path.exists(req):
+        return
+    try:
+        import subprocess
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", req,
+             "--quiet", "--disable-pip-version-check"],
+            timeout=300,
+        )
+    except Exception:
+        pass
+
+
 def reiniciar_app():
-    """Reinicia el proceso para cargar el código nuevo."""
+    """Reinicia el proceso para cargar el código nuevo.
+
+    Usamos subprocess.Popen + salida en vez de os.execv: en Windows, execv
+    une los argumentos sin comillas y se rompe con rutas con espacios
+    (p. ej. C:\\Users\\Jose Ramon\\...)."""
+    import subprocess
     try:
         # datos/ ya está separado; el bot recarga config al arrancar.
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        script = os.path.abspath(sys.argv[0]) if sys.argv else ""
+        args = [sys.executable] + ([script] + sys.argv[1:] if script else [])
+        subprocess.Popen(args, cwd=BASE_DIR)
     except Exception:
-        # Como último recurso, salimos; el usuario reabre.
-        os._exit(0)
+        pass   # como último recurso el usuario reabre a mano
+    os._exit(0)
 
 
 def actualizar_si_hace_falta(logger=print):
