@@ -1,0 +1,18 @@
+# Datos del usuario (nunca subir credenciales ni historial)
+datos/
+config.json
+sesion.json
+historial_operaciones.csv
+token_github.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+
+# Sistema
+.DS_Store
+Thumbs.db

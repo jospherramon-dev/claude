@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot IFC Auto</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap');
+  :root {
+    --bg:#0d0f14;--bg2:#13161e;--bg3:#1a1e28;
+    --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+    --text:#e8eaf0;--muted:#7a7f8e;
+    --green:#1fc98e;--green-dim:rgba(31,201,142,0.12);
+    --red:#f0614a;--red-dim:rgba(240,97,74,0.12);
+    --yellow:#f5c842;--yellow-dim:rgba(245,200,66,0.12);
+    --blue:#4f9cf9;
+    --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;overflow:hidden;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 24px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);}
+  .logo{font-size:16px;font-weight:600;letter-spacing:-.3px;}
+  .logo span{color:var(--green);}
+  .pill{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:4px 12px;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+  .dot.on{background:var(--green);box-shadow:0 0 6px var(--green);}
+  .dot.off{background:var(--red);}
+  .dot.wait{background:var(--yellow);animation:blink 1.4s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  .badge{font-size:11px;font-weight:500;padding:3px 10px;border-radius:99px;}
+  .badge-demo{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(245,200,66,.3);}
+  .badge-real{background:var(--red-dim);color:var(--red);border:1px solid rgba(240,97,74,.3);}
+  .btn{font-family:var(--sans);font-size:13px;font-weight:500;padding:7px 18px;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;transition:all .15s;}
+  .btn:hover{background:var(--bg3);}
+  .btn-green{background:var(--green);color:#000;border-color:var(--green);}
+  .btn-green:hover{background:#18b07c;}
+  .btn-red{background:var(--red-dim);color:var(--red);border-color:rgba(240,97,74,.4);}
+  .btn-red:hover{background:rgba(240,97,74,.2);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+
+  .main{display:flex;flex:1;overflow:hidden;}
+
+  .sidebar{width:265px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:18px 14px;display:flex;flex-direction:column;gap:18px;background:var(--bg2);}
+  .slabel{font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:8px;}
+  .field{margin-bottom:10px;}
+  .field label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px;}
+  .field input,.field select{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 9px;border-radius:7px;outline:none;transition:border .15s;}
+  .field input:focus,.field select:focus{border-color:var(--blue);}
+  .field input[type=password]{letter-spacing:2px;}
+  .frow{display:flex;gap:8px;}
+  .frow .field{flex:1;}
+  .save-btn{width:100%;}
+
+  /* Temporalidad buttons */
+  .tf-group{display:flex;gap:6px;}
+  .tf-btn{flex:1;padding:6px 0;font-family:var(--mono);font-size:12px;font-weight:600;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--muted);cursor:pointer;transition:all .15s;text-align:center;}
+  .tf-btn.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+
+  /* Pares checkboxes */
+  .pares-list{display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto;padding-right:2px;}
+  .par-group-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:4px 0 6px;}
+  .par-group-label span{font-family:var(--mono);font-weight:500;opacity:.6;margin-left:4px;}
+  .par-row{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;transition:border .15s;}
+  .par-row:hover{border-color:var(--border2);}
+  .par-row.active{border-color:var(--green);background:var(--green-dim);}
+  .par-row .par-check{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border2);background:var(--bg);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+  .par-row.active .par-check{background:var(--green);border-color:var(--green);}
+  .par-row.active .par-check::after{content:'✓';color:#000;font-size:11px;font-weight:900;line-height:1;}
+  .par-row .par-main{flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:1px;}
+  .par-row .par-name{font-size:12px;font-family:var(--mono);font-weight:500;color:var(--text);}
+  .par-row .par-sub{font-size:10px;color:var(--muted);font-family:var(--mono);display:flex;gap:6px;align-items:center;}
+  .par-row .par-sub .payout{color:var(--muted);}
+  .par-row .par-sub .payout.hi{color:var(--green);font-weight:600;}
+  .par-row .par-sub .closed{color:var(--red);}
+  .par-mode{display:flex;gap:1px;border-radius:6px;overflow:hidden;border:1px solid var(--border2);flex-shrink:0;}
+  .par-mode button{background:var(--bg);color:var(--muted);border:0;font-family:var(--mono);font-size:10px;font-weight:700;padding:4px 7px;cursor:pointer;transition:all .15s;letter-spacing:.04em;}
+  .par-mode button:hover{background:var(--bg2);color:var(--text);}
+  .par-mode button.on-c{background:var(--green);color:#000;}
+  .par-mode button.on-r{background:var(--red);color:#fff;}
+
+  .panel{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px;}
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .metric{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;}
+  .mlbl{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .mval{font-size:22px;font-weight:600;font-family:var(--mono);}
+  .mval.green{color:var(--green);}
+  .mval.red{color:var(--red);}
+  .msub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .ctitle{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+
+  .pares{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .par{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;}
+  .pname{font-size:12px;font-weight:500;}
+  .pbadge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;}
+  .pbuy{background:var(--green-dim);color:var(--green);}
+  .psell{background:var(--red-dim);color:var(--red);}
+  .pnone{background:var(--bg);color:var(--muted);}
+
+  .sbar{margin-bottom:10px;}
+  .shead{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .prog{height:4px;background:var(--bg3);border-radius:99px;overflow:hidden;}
+  .pfill{height:100%;border-radius:99px;transition:width .4s;}
+
+  .tabs{display:flex;gap:3px;}
+  .tab{font-size:12px;padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans);}
+  .tab.active{background:var(--bg3);color:var(--text);}
+
+  .ops-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .ops-tbl th{text-align:left;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:0 8px 8px;}
+  .ops-tbl td{padding:8px;border-top:1px solid var(--border);font-family:var(--mono);color:var(--muted);}
+  .ops-tbl td:first-child{color:var(--text);font-family:var(--sans);}
+  .wrow td{background:rgba(31,201,142,.03);}
+  .lrow td{background:rgba(240,97,74,.03);}
+
+  .logbox{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.75;max-height:220px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
+  .ll{display:flex;gap:8px;}
+  .lt{color:rgba(255,255,255,.2);min-width:65px;}
+  .lwin{color:var(--green);}
+  .lloss{color:var(--red);}
+  .lwarn{color:var(--yellow);}
+
+  .chwrap{position:relative;width:100%;height:150px;}
+  ::-webkit-scrollbar{width:4px;}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="logo">Bot <span>IFC</span> Auto</div>
+    <div class="pill">
+      <div class="dot wait" id="cdot"></div>
+      <span id="clabel">Desconectado</span>
+    </div>
+    <span class="badge badge-demo" id="mbadge">DEMO</span>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button class="btn"           id="btnR" onclick="reiniciarDia()" title="Reinicia contadores del día (wins, losses, neto, racha, operaciones). No toca el balance real.">Reiniciar día</button>
+    <button class="btn btn-green" id="btnI" onclick="iniciarBot()">Iniciar bot</button>
+    <button class="btn btn-red"   id="btnD" onclick="detenerBot()" disabled>Detener</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div>
+      <div class="slabel">Cuenta IQ Option</div>
+      <div class="field"><label>Email</label><input type="email" id="cu" placeholder="tu@email.com"></div>
+      <div class="field"><label>Contraseña</label><input type="password" id="cp" placeholder="••••••••"></div>
+      <div class="field"><label>Modo</label>
+        <select id="cm">
+          <option value="PRACTICE">Demo (recomendado)</option>
+          <option value="REAL">Real ⚠</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel">Temporalidad</div>
+      <div class="tf-group">
+        <div class="tf-btn active" id="tf1"  onclick="setTF(1)">M1</div>
+        <div class="tf-btn"        id="tf5"  onclick="setTF(5)">M5</div>
+        <div class="tf-btn"        id="tf15" onclick="setTF(15)">M15</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Pares activos</span>
+        <span id="paresContador" style="font-size:10px;color:var(--muted);font-family:var(--mono);">— seleccionados</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+        <button class="btn" id="btnDetectar" onclick="detectarPares()" style="width:100%;font-size:12px;padding:8px;">
+          🔍 Detectar pares disponibles
+        </button>
+        <button class="btn" id="btnSelTodo" onclick="seleccionarTodos()" style="width:100%;font-size:12px;padding:8px;">
+          ☑ Seleccionar todo
+        </button>
+        <button class="btn" id="btnBTDia" onclick="backtestDiaSeleccionados()" style="width:100%;font-size:12px;padding:8px;background:var(--yellow-dim);color:var(--yellow);border-color:rgba(245,200,66,.3);" disabled>
+          📊 Backtest 1 día · seleccionados
+        </button>
+      </div>
+
+      <div id="paresHint" style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:8px;">
+        Detectar y backtestear funciona <b>sin arrancar el bot</b> (usa tus credenciales
+        guardadas para conectarse solo a leer datos). El backtest de 1 día corre la
+        <b>estrategia activa</b> de tu configuración. Los toggles
+        <b style="color:var(--green);">C</b>/<b style="color:var(--red);">R</b> son el modo
+        IFC por par (continuidad/reversión). Cambios en caliente: sin reiniciar el bot.
+      </div>
+
+      <!-- Lista OTC -->
+      <div class="par-group-label">OTC <span id="paresOtcCount"></span></div>
+      <div class="pares-list" id="paresList"></div>
+
+      <!-- Lista mercado normal (solo se muestra si la detección reportó algún par abierto) -->
+      <div id="paresNormalesWrap" style="display:none;">
+        <div class="par-group-label" style="margin-top:12px;">Mercado normal <span id="paresNormalesCount"></span></div>
+        <div class="pares-list" id="paresNormalesList"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel">Telegram</div>
+      <div class="field"><label>Token bot</label><input type="text" id="ct" placeholder="123456:ABC..."></div>
+      <div class="field"><label>Chat ID</label><input type="text" id="cc" placeholder="-100123456"></div>
+      <button class="btn" id="btnTestTg" onclick="probarTelegram()" style="width:100%;font-size:12px;padding:7px;margin-top:2px;">📨 Probar Telegram</button>
+      <div id="tgTestResultado" style="font-size:11px;line-height:1.4;margin-top:6px;display:none;"></div>
+    </div>
+
+    <div>
+      <div class="slabel">Estrategia de la sesión</div>
+      <div class="field">
+        <label>Estrategia que operará el bot al Iniciar</label>
+        <select id="cestrategia">
+          <option value="ifc">IFC clásica (indecisión-fuerza, entrada directa)</option>
+          <option value="ifcpro">IFC-Pro (rompe nivel + retroceso a la zona)</option>
+          <option value="nr">Número Redondo ("El Hermoso")</option>
+          <option value="facundo">Facundo (price action en S/R: rechazo/rompimiento/lateral)</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;">
+        La auto-calibración por modo (continuidad/reversión) solo aplica a IFC clásica. Para Facundo, ajusta <b>facundo_modo</b> en config.json ("rechazo" / "rompimiento" / "lateral" / "ambos"). Antes de operar una estrategia en real, córrela en el Backtest sobre tus pares.
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel">Capital · Position sizing (Kelly fraccional)</div>
+      <div class="field" style="margin-bottom:6px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="cks" style="width:auto;margin:0;"> Activar Kelly (tamaño de operación según el balance)
+        </label>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Riesgo %</label><input type="number" id="cr" value="2" min="0" max="10" step="0.5"></div>
+        <div class="field"><label>Exp. min</label><input type="number" id="ce" value="1" min="1" max="5"></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Monto mín $</label><input type="number" id="cmin" value="1" min="1" step="0.5"></div>
+        <div class="field"><label>Monto máx $</label><input type="number" id="cmax" value="50" min="1" step="1"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;">
+        Con Kelly activado, el monto se calcula con Kelly fraccional sobre el balance (no se usa el monto fijo). Mín/Máx acotan el resultado. Con Kelly desactivado, se usa el monto fijo de siempre.
+      </div>
+    </div>
+
+    <div>
+      <div class="slabel">Stop diario</div>
+      <div class="frow">
+        <div class="field"><label>Pérd. seg.</label><input type="number" id="cs" value="3" min="1"></div>
+        <div class="field"><label>Pérd. día</label><input type="number" id="cd" value="5" min="1"></div>
+      </div>
+      <div class="field"><label>Objetivo wins/día</label><input type="number" id="co" value="10" min="1"></div>
+    </div>
+
+    <!-- MARTINGALA -->
+    <div class="cfg-block" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+      <div class="cfg-title" style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Martingala</div>
+      <div class="frow" style="align-items:center;gap:10px;margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--text);">Activar</label>
+        <label style="position:relative;display:inline-block;width:36px;height:20px;">
+          <input type="checkbox" id="cm_activa" style="opacity:0;width:0;height:0;" onchange="toggleMartingala(this.checked)">
+          <span id="cm_slider" style="position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:20px;transition:.3s;">
+            <span id="cm_knob" style="position:absolute;height:14px;width:14px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;"></span>
+          </span>
+        </label>
+      </div>
+      <div id="mart_campos" style="display:none;">
+        <div class="frow">
+          <div class="field"><label>Multiplicador</label>
+            <select id="cm_mult" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;width:100%;">
+              <option value="1.5">×1.5</option>
+              <option value="2" selected>×2.0</option>
+              <option value="2.5">×2.5</option>
+              <option value="3">×3.0</option>
+            </select>
+          </div>
+          <div class="field"><label>Niveles</label>
+            <input type="number" id="cm_niveles" value="1" min="1" max="5">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">
+          Pérdida → multiplica monto. Ganancia o nivel máximo → vuelve al monto base.
+        </div>
+        <!-- Estado en vivo -->
+        <div style="margin-top:8px;padding:8px;background:var(--surface2);border-radius:6px;font-size:12px;display:flex;gap:16px;">
+          <span>Nivel: <b id="mart_nivel_live">—</b></span>
+          <span>Próximo monto: <b id="mart_monto_live">—</b></span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn save-btn" onclick="guardarCfg()">Guardar configuración</button>
+  </div>
+
+  <!-- Panel -->
+  <div class="panel">
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="mlbl">Balance</div>
+        <div class="mval" id="mbal">$—</div>
+        <div class="msub" id="mmodo">Demo</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Neto hoy</div>
+        <div class="mval" id="mneto">$0.00</div>
+        <div class="msub" id="mnetsub">sin operaciones</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Wins / Losses</div>
+        <div class="mval" id="mwl">0 / 0</div>
+        <div class="msub" id="mpct">—% acierto</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Próxima entrada</div>
+        <div class="mval" id="mmonto">$—</div>
+        <div class="msub" id="mriesgo">2% del balance</div>
+      </div>
+    </div>
+
+    <!-- Resultados del último backtest 1 día (aparece cuando hay datos) -->
+    <div class="card" id="btDiaCard" style="display:none;">
+      <div class="ctitle">
+        <span id="btDiaTitulo">Backtest 1 día</span>
+        <span style="display:flex;gap:6px;align-items:center;">
+          <span id="btDiaMeta" style="font-size:11px;color:var(--muted);font-family:var(--mono);"></span>
+          <button class="btn" id="btnAplicarSug" onclick="aplicarSugeridosBT()" style="font-size:11px;padding:4px 10px;">Aplicar sugeridos</button>
+          <button class="btn" onclick="cerrarBTDia()" style="font-size:11px;padding:4px 10px;">Cerrar</button>
+        </span>
+      </div>
+      <table class="ops-tbl" style="font-size:12px;">
+        <thead><tr id="btDiaHead"></tr></thead>
+        <tbody id="btDiaBody"></tbody>
+      </table>
+      <div id="btDiaNota" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5;"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div class="card">
+        <div class="ctitle">Estado de pares</div>
+        <div class="pares" id="pgrid"></div>
+      </div>
+      <div class="card">
+        <div class="ctitle">
+          <span>Límites del día</span>
+          <span id="stopst" style="font-size:11px;color:var(--green);">OK</span>
+        </div>
+        <div id="sbars"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctitle">
+        <div class="tabs">
+          <button class="tab active" onclick="tab('ops',this)">Operaciones</button>
+          <button class="tab"        onclick="tab('log',this)">Log en vivo</button>
+          <button class="tab"        onclick="tab('ch',this)">Gráfico</button>
+          <button class="tab"        onclick="tab('pares',this)">Por par</button>
+          <button class="tab"        onclick="tab('stats',this)">📊 Estadísticas</button>
+        </div>
+      </div>
+      <div id="t-ops">
+        <table class="ops-tbl">
+          <thead><tr><th>Par</th><th>Dir.</th><th>Monto</th><th>Ganancia</th><th>Balance</th><th>Hora</th></tr></thead>
+          <tbody id="otbody"><tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted);">Sin operaciones aún</td></tr></tbody>
+        </table>
+      </div>
+      <div id="t-log" style="display:none;">
+        <div class="logbox" id="logbox">
+          <div class="ll"><span class="lt">--:--:--</span><span>Esperando inicio del bot...</span></div>
+        </div>
+      </div>
+      <div id="t-ch" style="display:none;">
+        <div class="chwrap"><canvas id="perf" role="img" aria-label="Rendimiento acumulado del día">Sin datos.</canvas></div>
+      </div>
+      <div id="t-pares" style="display:none;">
+        <table class="ops-tbl">
+          <thead><tr><th>Par</th><th>Ganadas</th><th>Perdidas</th><th>Total</th><th>Efectividad</th><th>Neto</th></tr></thead>
+          <tbody id="parestbody"><tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted);">Sin operaciones aún</td></tr></tbody>
+        </table>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Efectividad por horario</div>
+          <table class="ops-tbl">
+            <thead><tr><th>Horario</th><th>Ganadas</th><th>Perdidas</th><th>Total</th><th>Efectividad</th></tr></thead>
+            <tbody id="horatbody"><tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted);">Sin operaciones aún</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="t-stats" style="display:none;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <button class="btn" onclick="cargarStats()" style="font-size:12px;padding:7px 12px;">🔄 Actualizar</button>
+          <button class="btn btn-green" onclick="descargarExcel()" style="font-size:12px;padding:7px 12px;">📥 Descargar Excel</button>
+          <button class="btn" onclick="descargarCSV()" style="font-size:12px;padding:7px 12px;">📄 Descargar CSV</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:16px;">
+          Estos datos se acumulan solos en <b>historial_operaciones.csv</b> (en la carpeta del bot) y
+          <b>no se borran</b> al cambiar de día ni con "Reiniciar día". El Excel te arma todo desglosado
+          en hojas (resumen, por par, por hora, por día, por estrategia) y se descarga a tu carpeta de Descargas.
+        </div>
+
+        <div id="statsResumen" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px;"></div>
+
+        <div id="statsBloques"></div>
+        <div id="statsVacio" style="text-align:center;padding:24px;color:var(--muted);display:none;">
+          Todavía no hay operaciones registradas. En cuanto el bot cierre su primera operación, aparecerán aquí.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+
+// ── Lista OTC por defecto (fallback si nunca se pulsa "Detectar pares").
+// Cuando el usuario pulsa "Detectar pares disponibles" esto se reemplaza
+// con la lista fresca desde el bróker (incluye payout y pares normales).
+const OTC_DEFAULT = [
+  'EURUSD-OTC','GBPUSD-OTC','USDJPY-OTC','EURGBP-OTC',
+  'EURJPY-OTC','GBPJPY-OTC','AUDUSD-OTC','USDCAD-OTC',
+  'USDCHF-OTC','NZDUSD-OTC','AUDCAD-OTC','AUDCHF-OTC',
+  'CADJPY-OTC','CHFJPY-OTC','EURCAD-OTC','EURCHF-OTC',
+  'EURAUD-OTC','GBPAUD-OTC','GBPCAD-OTC','GBPCHF-OTC',
+];
+
+// Pares detectados: {otc:[{nombre_real, display, payout, abierto, ...}], normales:[...]}
+// Antes de la primera detección, se rellena con la lista por defecto sin payout.
+let paresDetectados = {
+  otc: OTC_DEFAULT.map(p => ({nombre_real:p, display:p, payout:0, abierto:true})),
+  normales: [],
+};
+// Pares que el usuario tiene marcados (se guardan en config["pares"])
+let paresActivos = ['EURUSD-OTC','GBPUSD-OTC','USDJPY-OTC','EURGBP-OTC'];
+// Modo IFC por par: {"USDCHF-OTC":"continuidad", "EURCHF-OTC":"reversion"}
+// Cargado de config["ifc_modo_por_par"], persistente.
+let modoPorPar = {};
+// Modo global por defecto para pares sin modo asignado
+let modoGlobal = 'continuidad';
+// Últimos resultados del backtest 1 día (para la card del panel)
+let ultimoBTDia = null;
+
+let tfActual = 1;
+let perf = null;
+let poll = null;
+let ultimoEstado = null;
+
+// ── Render de la lista de pares (OTC + normales) ────────────────
+function renderParesList() {
+  const contOtc = document.getElementById('paresList');
+  const contNor = document.getElementById('paresNormalesList');
+  const wrapNor = document.getElementById('paresNormalesWrap');
+  if (!contOtc) return;
+
+  const otc = paresDetectados.otc || [];
+  const nor = paresDetectados.normales || [];
+  contOtc.innerHTML = otc.map(renderFilaPar).join('') ||
+                      '<div style="color:var(--muted);font-size:11px;padding:10px 4px;text-align:center;">Pulsa "Detectar pares" para cargar los pares OTC del bróker.</div>';
+  if (nor.length) {
+    wrapNor.style.display = 'block';
+    contNor.innerHTML = nor.map(renderFilaPar).join('');
+  } else {
+    wrapNor.style.display = 'none';
+    contNor.innerHTML = '';
+  }
+  document.getElementById('paresOtcCount').textContent      = otc.length ? '(' + otc.length + ')' : '';
+  document.getElementById('paresNormalesCount').textContent = nor.length ? '(' + nor.length + ')' : '';
+  document.getElementById('paresContador').textContent = paresActivos.length + ' seleccionados';
+  document.getElementById('btnBTDia').disabled = paresActivos.length === 0;
+  // Label del botón Seleccionar todo según estado actual
+  const todosNombres = [...(paresDetectados.otc||[]), ...(paresDetectados.normales||[])].map(p=>p.nombre_real);
+  const todosMarcados = todosNombres.length > 0 && todosNombres.every(n => paresActivos.includes(n));
+  const btnSel = document.getElementById('btnSelTodo');
+  if (btnSel) btnSel.textContent = todosMarcados ? '☐ Quitar todos' : '☑ Seleccionar todo';
+}
+
+// ── Seleccionar / quitar todos los pares listados ───────────────
+function seleccionarTodos() {
+  const todos = [...(paresDetectados.otc||[]), ...(paresDetectados.normales||[])].map(p=>p.nombre_real);
+  if (!todos.length) { alert('Primero pulsa "Detectar pares disponibles".'); return; }
+  const todosMarcados = todos.every(n => paresActivos.includes(n));
+  paresActivos = todosMarcados ? [] : todos.slice();
+  renderParesList();
+  postJSON('/api/guardar_config', {pares: paresActivos}).catch(()=>{});
+}
+
+function renderFilaPar(p) {
+  const nombre = p.nombre_real;
+  const disp   = p.display || nombre;
+  const on     = paresActivos.includes(nombre);
+  const modo   = modoPorPar[nombre] || modoGlobal;   // C por defecto
+  const payout = p.payout || 0;
+  const cerrado= p.abierto === false;
+  const payoutCls = payout >= 85 ? 'hi' : '';
+  const payoutTxt = payout > 0 ? (payout + '%') : (cerrado ? '' : '—%');
+  const cerradoTag = cerrado ? '<span class="closed">· cerrado</span>' : '';
+  return `<div class="par-row ${on?'active':''}">
+    <div class="par-check" onclick="togglePar('${nombre}')"></div>
+    <div class="par-main" onclick="togglePar('${nombre}')">
+      <span class="par-name">${disp}</span>
+      <span class="par-sub"><span class="payout ${payoutCls}">${payoutTxt}</span>${cerradoTag}</span>
+    </div>
+    <div class="par-mode">
+      <button class="${modo==='continuidad'?'on-c':''}" onclick="setModoPar('${nombre}','continuidad')" title="Continuidad: a favor de la fuerza">C</button>
+      <button class="${modo==='reversion'?'on-r':''}"   onclick="setModoPar('${nombre}','reversion')"   title="Reversión: contra la fuerza">R</button>
+    </div>
+  </div>`;
+}
+
+function togglePar(par) {
+  const idx = paresActivos.indexOf(par);
+  if (idx >= 0) paresActivos.splice(idx, 1);
+  else          paresActivos.push(par);
+  renderParesList();
+  // Guarda en caliente para que el bot corriendo lo aplique en la
+  // próxima vuelta del loop (~5s). No bloqueamos la UI si falla.
+  fetch('/api/guardar_config', {
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': _CSRF_TOKEN},
+    body: JSON.stringify({pares: paresActivos})
+  }).catch(()=>{});
+}
+
+// Cambia el modo IFC de un par (C o R). Se guarda por par de forma
+// persistente; el bot lo aplica en caliente en el siguiente análisis.
+async function setModoPar(par, modo) {
+  // Toggle: si ya estaba en ese modo, no hace nada (evita clicks accidentales)
+  if (modoPorPar[par] === modo) return;
+  modoPorPar[par] = modo;
+  renderParesList();
+  try {
+    await postJSON('/api/modo_par', {par, modo});
+  } catch(e) {}
+}
+
+// ── Detectar pares disponibles ──────────────────────────────────
+async function detectarPares() {
+  const btn = document.getElementById('btnDetectar');
+  btn.disabled = true;
+  const originalTxt = btn.textContent;
+  btn.textContent = '⏳ Consultando bróker...';
+  try {
+    const r = await fetch('/api/pares_disponibles');
+    const d = await r.json();
+    if (!d.ok) {
+      alert('No pude detectar: ' + (d.error || 'error desconocido'));
+      return;
+    }
+    // Fusionar el modo actual (config del usuario) con la respuesta
+    (d.otc || []).forEach(p => { if (!modoPorPar[p.nombre_real] && p.modo) modoPorPar[p.nombre_real] = p.modo; });
+    (d.normales || []).forEach(p => { if (!modoPorPar[p.nombre_real] && p.modo) modoPorPar[p.nombre_real] = p.modo; });
+    paresDetectados = {
+      otc: d.otc || [],
+      normales: d.normales || [],
+    };
+    renderParesList();
+    btn.textContent = '✓ ' + ((d.otc||[]).length + (d.normales||[]).length) + ' pares detectados';
+    setTimeout(() => btn.textContent = originalTxt, 1800);
+  } catch(e) {
+    alert('Error de red: ' + e);
+    btn.textContent = originalTxt;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Backtest 1 día de los pares seleccionados ──────────────────
+async function backtestDiaSeleccionados() {
+  if (!paresActivos.length) { alert('Marca al menos un par.'); return; }
+  if (paresActivos.length >= 8 &&
+      !confirm('Vas a correr el backtest de 1 día sobre ' + paresActivos.length +
+               ' pares.\n\nHay que traer ~1440 velas de cada uno del bróker: puede tardar ' +
+               'varios minutos. La interfaz sigue usable mientras tanto.\n\n¿Continuar?')) {
+    return;
+  }
+  const btn = document.getElementById('btnBTDia');
+  btn.disabled = true;
+  const originalTxt = btn.textContent;
+  btn.textContent = '⏳ Backtest ' + paresActivos.length + ' pares (1 día)...';
+  try {
+    const r = await postJSON('/api/backtest_dia', {pares: paresActivos, velas: 1440});
+    const d = await r.json();
+    if (!d.ok) {
+      alert('No pude correr el backtest: ' + (d.error || 'error desconocido'));
+      return;
+    }
+    ultimoBTDia = d;
+    mostrarResultadosBT(d);
+    btn.textContent = '✓ Backtest completo';
+    setTimeout(() => btn.textContent = originalTxt, 1800);
+  } catch(e) {
+    alert('Error de red: ' + e);
+    btn.textContent = originalTxt;
+  } finally {
+    btn.disabled = paresActivos.length === 0;
+  }
+}
+
+function mostrarResultadosBT(d) {
+  const card = document.getElementById('btDiaCard');
+  const head = document.getElementById('btDiaHead');
+  const body = document.getElementById('btDiaBody');
+  const meta = document.getElementById('btDiaMeta');
+  const be = d.break_even_87 || 53.5;
+  const estr = d.estrategia || 'ifc';
+  const esIFC = estr === 'ifc';
+
+  // Título + meta + nota contextual según la estrategia probada
+  const titulos = {ifc:'Backtest 1 día · IFC · sugerencia de modo por par',
+                   facundo:'Backtest 1 día · FACUNDO · directo vs invertido',
+                   nr:'Backtest 1 día · NÚMERO REDONDO · rebote vs ruptura',
+                   ifcpro:'Backtest 1 día · IFC-PRO'};
+  document.getElementById('btDiaTitulo').textContent = titulos[estr] || ('Backtest 1 día · ' + estr.toUpperCase());
+  meta.textContent = 'break-even ' + be + '% (payout 87%) · ' + (d.velas_por_par || 1440) + ' velas M1 por par';
+  const notas = {
+    ifc: 'Verde = supera el break-even. "Aplicar" pone el modo sugerido a ese par (C/R por par); "Aplicar sugeridos" lo hace con todos. Pocas señales (&lt;15) en amarillo = muestra corta.',
+    facundo: 'Verde = supera el break-even. La columna marcada ● es tu configuración actual (facundo_invertir es GLOBAL: se cambia en config.json, no por par). Pocas señales (&lt;15) en amarillo = muestra corta. Si tu payout real es menor a 87%, tu break-even es más alto.',
+    nr: 'Verde = supera el break-even. La columna marcada ● es tu nr_modo actual (global, se cambia en config.json). Pocas señales (&lt;15) en amarillo = muestra corta.',
+    ifcpro: 'Verde = supera el break-even. IFC-Pro no tiene modos que elegir. Pocas señales (&lt;15) en amarillo = muestra corta.',
+  };
+  document.getElementById('btDiaNota').innerHTML = notas[estr] || notas.ifc;
+  document.getElementById('btnAplicarSug').style.display = esIFC ? '' : 'none';
+
+  // Cabecera dinámica según las variantes de la primera fila válida
+  const filaOK = (d.resultados || []).find(r => r.ok && r.variantes && r.variantes.length);
+  const variantes = filaOK ? filaOK.variantes : [];
+  const modoActualFila = filaOK ? filaOK.modo_actual : null;
+  let ths = '<th>Par</th><th>Señales</th>';
+  variantes.forEach(v => {
+    const marca = (!esIFC && v.clave === modoActualFila) ? ' ●' : '';
+    ths += `<th>${v.nombre}${marca}</th>`;
+  });
+  ths += '<th>Sugerido</th>';
+  if (esIFC) ths += '<th>Modo actual</th><th></th>';
+  head.innerHTML = ths;
+  const nCols = 2 + variantes.length + 1 + (esIFC ? 2 : 0);
+
+  body.innerHTML = (d.resultados || []).map(r => {
+    if (!r.ok) return `<tr><td>${r.par}</td><td colspan="${nCols-1}" style="color:var(--red);">${r.error || 'error'}</td></tr>`;
+    const vs = r.variantes || [];
+    const totRef = Math.max(...vs.map(v=>v.total), 0);
+    const senalCls = totRef < 15 ? 'color:var(--yellow)' : 'color:var(--text)';
+    let tds = `<td>${r.par}</td><td style="${senalCls};font-family:var(--mono);">${vs.map(v=>v.total).join(' / ')}</td>`;
+    vs.forEach(v => {
+      const cls = v.wr >= be ? 'color:var(--green);font-weight:600' : (v.wr < 45 ? 'color:var(--red)' : 'color:var(--muted)');
+      tds += `<td style="${cls};font-family:var(--mono);">${v.wr}%</td>`;
+    });
+    // Sugerido
+    let sugTxt = '<span style="color:var(--muted)">—</span>';
+    if (r.sugerido) {
+      const vSug = vs.find(v => v.clave === r.sugerido);
+      const nom = esIFC ? (r.sugerido === 'continuidad' ? 'C' : 'R') : (vSug ? vSug.nombre : r.sugerido);
+      const col = (r.sugerido === 'reversion' || r.sugerido === 'invertido') ? 'var(--red)' : 'var(--green)';
+      sugTxt = `<span style="color:${col};font-weight:700" title="${r.razon||''}">${nom}</span>`;
+    }
+    tds += `<td>${sugTxt}</td>`;
+    if (esIFC) {
+      const actual = (r.modo_actual === 'reversion') ? 'R' : 'C';
+      const actualCol = r.modo_actual === 'reversion' ? 'var(--red)' : 'var(--green)';
+      const aplBtn = r.sugerido ? `<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="aplicarSugerido('${r.par}','${r.sugerido}')">Aplicar</button>` : '';
+      tds += `<td style="color:${actualCol};font-family:var(--mono);font-weight:600;">${actual}</td><td>${aplBtn}</td>`;
+    }
+    return `<tr>${tds}</tr>`;
+  }).join('') || `<tr><td colspan="${nCols}" style="text-align:center;color:var(--muted);padding:14px;">Sin resultados.</td></tr>`;
+  card.style.display = 'block';
+  card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function aplicarSugerido(par, modo) {
+  await setModoPar(par, modo);
+  // Marca visualmente que se aplicó cambiando el "modo actual" en la tabla
+  if (ultimoBTDia && ultimoBTDia.resultados) {
+    const r = ultimoBTDia.resultados.find(x => x.par === par);
+    if (r) r.modo_actual = modo;
+    mostrarResultadosBT(ultimoBTDia);
+  }
+}
+
+async function aplicarSugeridosBT() {
+  if (!ultimoBTDia || !ultimoBTDia.resultados) return;
+  if ((ultimoBTDia.estrategia || 'ifc') !== 'ifc') {
+    alert('El modo por par (C/R) solo aplica a IFC. Para ' + (ultimoBTDia.estrategia||'').toUpperCase() + ' el modo es global y se cambia en config.json.');
+    return;
+  }
+  const pares = ultimoBTDia.resultados.filter(r => r.ok && r.sugerido && r.aplicable !== false);
+  if (!pares.length) { alert('No hay sugerencias claras para aplicar.'); return; }
+  if (!confirm('Aplicar el modo sugerido a ' + pares.length + ' pares?')) return;
+  for (const r of pares) {
+    modoPorPar[r.par] = r.sugerido;
+    r.modo_actual = r.sugerido;
+    try {
+      await postJSON('/api/modo_par', {par:r.par, modo:r.sugerido});
+    } catch(e) {}
+  }
+  renderParesList();
+  mostrarResultadosBT(ultimoBTDia);
+}
+
+function cerrarBTDia() {
+  document.getElementById('btDiaCard').style.display = 'none';
+}
+
+// ── Reiniciar día (contadores a cero) ──────────────────────────
+async function reiniciarDia() {
+  const w = (ultimoEstado && ultimoEstado.wins) || 0;
+  const l = (ultimoEstado && ultimoEstado.losses) || 0;
+  const n = (ultimoEstado && ultimoEstado.neto)  || 0;
+  const msg = `Reiniciar contadores del día?\n\n` +
+              `Actual: ${w}W / ${l}L / neto ${n>=0?'+':''}$${n.toFixed(2)}\n\n` +
+              `Esto NO toca tu balance real, solo pone en cero los contadores del bot (wins, losses, neto, racha, historial de operaciones, pares bloqueados).`;
+  if (!confirm(msg)) return;
+  try {
+    await postJSON('/api/reiniciar_dia', {});
+    if (ultimoEstado) {
+      ultimoEstado.wins = 0; ultimoEstado.losses = 0; ultimoEstado.neto = 0;
+      ultimoEstado.perdidas_seguidas = 0; ultimoEstado.operaciones = [];
+      render(ultimoEstado);
+    }
+  } catch(e) { alert('Error: ' + e); }
+}
+
+// ── Temporalidad ─────────────────────────────────────────────
+function setTF(min) {
+  tfActual = min;
+  [1,5,15].forEach(m => {
+    const el = document.getElementById('tf'+m);
+    el.classList.toggle('active', m === min);
+  });
+}
+
+// ── Tabs ─────────────────────────────────────────────────────
+function tab(id, el) {
+  ['ops','log','ch','pares','stats'].forEach(t => document.getElementById('t-'+t).style.display = t===id?'block':'none');
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (id==='ch' && !perf) initChart();
+  if (id==='pares') { renderResumenPares(); renderResumenHorarios(); }
+  if (id==='stats') cargarStats();
+}
+
+// ── Pestaña Estadísticas (historial permanente) ─────────────────
+function _tablaStats(titulo, claveLabel, grupos, be) {
+  if (!grupos || !grupos.length) return '';
+  const filas = grupos.map(g => {
+    const efCol = g.efectividad >= (be||54) ? 'color:var(--green);font-weight:600'
+                : (g.efectividad < 45 && (g.ganadas+g.perdidas) > 0 ? 'color:var(--red)' : 'color:var(--text)');
+    const netoCol = g.neto > 0 ? 'color:var(--green)' : (g.neto < 0 ? 'color:var(--red)' : 'color:var(--muted)');
+    return `<tr>
+      <td style="font-family:var(--mono);">${g.clave}</td>
+      <td style="color:var(--green);font-family:var(--mono);">${g.ganadas}</td>
+      <td style="color:var(--red);font-family:var(--mono);">${g.perdidas}</td>
+      <td style="font-family:var(--mono);">${g.total}</td>
+      <td style="${efCol};font-family:var(--mono);">${g.efectividad}%</td>
+      <td style="${netoCol};font-family:var(--mono);">${g.neto>=0?'+':''}$${g.neto.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${titulo}</div>
+    <table class="ops-tbl" style="font-size:12px;">
+      <thead><tr><th>${claveLabel}</th><th>Gan.</th><th>Perd.</th><th>Total</th><th>Efect.</th><th>Neto</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+  </div>`;
+}
+
+function _cardMetrica(label, valor, color) {
+  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${label}</div>
+    <div style="font-size:18px;font-weight:700;font-family:var(--mono);${color?('color:'+color):''}">${valor}</div>
+  </div>`;
+}
+
+async function cargarStats() {
+  const resumen = document.getElementById('statsResumen');
+  const bloques = document.getElementById('statsBloques');
+  const vacio = document.getElementById('statsVacio');
+  try {
+    const r = await fetch('/api/estadisticas');
+    const d = await r.json();
+    if (!d.ok || d.vacio) {
+      resumen.innerHTML = ''; bloques.innerHTML = '';
+      vacio.style.display = 'block';
+      return;
+    }
+    vacio.style.display = 'none';
+    const netoCol = d.neto > 0 ? 'var(--green)' : (d.neto < 0 ? 'var(--red)' : '');
+    const efCol = d.efectividad >= 54 ? 'var(--green)' : (d.efectividad < 50 ? 'var(--red)' : '');
+    resumen.innerHTML =
+      _cardMetrica('Operaciones', d.total) +
+      _cardMetrica('Ganadas', d.ganadas, 'var(--green)') +
+      _cardMetrica('Perdidas', d.perdidas, 'var(--red)') +
+      _cardMetrica('Efectividad', d.efectividad+'%', efCol) +
+      _cardMetrica('Neto', (d.neto>=0?'+':'')+'$'+d.neto.toFixed(2), netoCol) +
+      _cardMetrica('Racha máx. W', d.racha_ganadas_max, 'var(--green)') +
+      _cardMetrica('Racha máx. L', d.racha_perdidas_max, 'var(--red)') +
+      _cardMetrica('Días operados', d.dias_operados);
+    bloques.innerHTML =
+      _tablaStats('Por par', 'Par', d.por_par) +
+      _tablaStats('Por hora', 'Franja', d.por_hora) +
+      _tablaStats('Por día de la semana', 'Día', d.por_dia_semana) +
+      _tablaStats('Por día', 'Fecha', d.por_dia) +
+      (d.por_estrategia && d.por_estrategia.length > 1 ? _tablaStats('Por estrategia', 'Estrategia', d.por_estrategia) : '');
+  } catch(e) {
+    bloques.innerHTML = '<div style="color:var(--red);padding:12px;">Error cargando estadísticas: '+e+'</div>';
+  }
+}
+
+// Las descargas abren el endpoint directo: el navegador las guarda como
+// archivo (Content-Disposition: attachment) en la carpeta de Descargas.
+function descargarExcel() { window.location.href = '/api/descargar_excel'; }
+function descargarCSV()   { window.location.href = '/api/descargar_csv'; }
+
+// ── Probar Telegram ─────────────────────────────────────────────
+// Usa lo que está ESCRITO en los campos ahora mismo (sin necesidad de
+// guardar antes), así puedes probar token/chat_id antes de comprometerlos.
+async function probarTelegram() {
+  const btn = document.getElementById('btnTestTg');
+  const out = document.getElementById('tgTestResultado');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '⏳ Probando...';
+  out.style.display = 'none';
+  try {
+    const r = await postJSON('/api/test_telegram', {
+      token_telegram: document.getElementById('ct').value,
+      chat_id: document.getElementById('cc').value,
+    });
+    const d = await r.json();
+    out.style.display = 'block';
+    out.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+    out.textContent = (d.ok ? '✅ ' : '❌ ') + d.detalle;
+  } catch(e) {
+    out.style.display = 'block';
+    out.style.color = 'var(--red)';
+    out.textContent = '❌ Error de red: ' + e;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// ── Chart ─────────────────────────────────────────────────────
+function initChart() {
+  perf = new Chart(document.getElementById('perf').getContext('2d'), {
+    type:'line',
+    data:{labels:['Inicio'],datasets:[{label:'Neto',data:[0],borderColor:'#1fc98e',backgroundColor:'rgba(31,201,142,0.08)',fill:true,tension:0.4,pointRadius:3,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#5a6070',font:{size:10}}},
+              y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#5a6070',font:{size:10},callback:v=>(v>=0?'+':'')+'\$'+v.toFixed(2)}}}}
+  });
+}
+
+// ── Config ────────────────────────────────────────────────────
+function toggleMartingala(activa) {
+  document.getElementById('mart_campos').style.display = activa ? 'block' : 'none';
+  const slider = document.getElementById('cm_slider');
+  const knob   = document.getElementById('cm_knob');
+  if (activa) {
+    slider.style.background = 'var(--green)';
+    knob.style.transform = 'translateX(16px)';
+  } else {
+    slider.style.background = 'var(--border)';
+    knob.style.transform = 'translateX(0)';
+  }
+}
+
+function getCfg() {
+  const riesgoPct  = parseFloat(document.getElementById('cr').value)||2;
+  const montoMin   = parseFloat(document.getElementById('cmin').value)||1;
+  const montoMax   = parseFloat(document.getElementById('cmax').value)||50;
+  return {
+    usuario:              document.getElementById('cu').value,
+    password:             document.getElementById('cp').value,
+    modo:                 document.getElementById('cm').value,
+    token_telegram:       document.getElementById('ct').value,
+    chat_id:              document.getElementById('cc').value,
+    // Estrategia elegida para la sesión (selector nuevo).
+    estrategia:           document.getElementById('cestrategia').value,
+    // RIESGO / Kelly — ahora con botón EXPLÍCITO de activar/desactivar
+    // (antes se activaba solo si riesgo>0). El usuario manda.
+    porcentaje_riesgo:    riesgoPct,                // legacy (algunos lugares del bot lo leen)
+    monto_minimo:         montoMin,                 // legacy
+    monto_maximo:         montoMax,                 // legacy
+    position_sizing_activa:      document.getElementById('cks').checked,
+    position_sizing_riesgo_pct:  riesgoPct,
+    position_sizing_min:         montoMin,
+    position_sizing_max:         montoMax,
+    expiracion:           parseInt(document.getElementById('ce').value)||1,
+    max_perdidas_seguidas:parseInt(document.getElementById('cs').value)||3,
+    max_perdidas_dia:     parseInt(document.getElementById('cd').value)||5,
+    objetivo_dia:         parseInt(document.getElementById('co').value)||10,
+    pares:                paresActivos,
+    ifc_modo_por_par:     modoPorPar,
+    modo_operacion:       'manual',   // UI actual = modo manual
+    timeframe:            tfActual * 60,
+    martingala_activa:    document.getElementById('cm_activa').checked,
+    martingala_mult:      parseFloat(document.getElementById('cm_mult').value)||2,
+    martingala_niveles:   parseInt(document.getElementById('cm_niveles').value)||1,
+  };
+}
+
+async function guardarCfg() {
+  const r = await postJSON('/api/guardar_config', getCfg());
+  const d = await r.json();
+  const b = document.querySelector('.save-btn');
+  b.textContent = d.ok ? 'Guardado ✓' : 'Error ✗';
+  setTimeout(()=>b.textContent='Guardar configuración', 2000);
+}
+
+async function cargarCfg() {
+  try {
+    const r = await fetch('/api/config');
+    const c = await r.json();
+    document.getElementById('cu').value   = c.usuario||'';
+    // SECURITY: el servidor YA no devuelve password. Si has_password=true
+    // dejamos el campo vacío con placeholder; el usuario debe reescribirla
+    // para iniciar el bot. Si la deja vacía y pulsa Iniciar, el servidor
+    // devuelve error "Falta email o contraseña".
+    const cp = document.getElementById('cp');
+    cp.value = '';
+    if (c.has_password) {
+      cp.placeholder = '•••••••• (re-escribe para iniciar)';
+    } else {
+      cp.placeholder = '••••••••';
+    }
+    document.getElementById('cm').value   = c.modo||'PRACTICE';
+    document.getElementById('ct').value   = c.token_telegram||'';
+    document.getElementById('cc').value   = c.chat_id||'';
+    // RIESGO: si el config nuevo existe, usar esos valores; si no, caer
+    // a los campos legacy (compatibilidad con configs viejos).
+    document.getElementById('cr').value   = c.position_sizing_riesgo_pct || c.porcentaje_riesgo || 2;
+    if (document.getElementById('cks')) document.getElementById('cks').checked = !!c.position_sizing_activa;
+    if (document.getElementById('cestrategia') && c.estrategia) document.getElementById('cestrategia').value = c.estrategia;
+    document.getElementById('ce').value   = c.expiracion||1;
+    document.getElementById('cmin').value = c.position_sizing_min || c.monto_minimo || 1;
+    document.getElementById('cmax').value = c.position_sizing_max || c.monto_maximo || 50;
+    document.getElementById('cs').value   = c.max_perdidas_seguidas||3;
+    document.getElementById('cd').value   = c.max_perdidas_dia||5;
+    document.getElementById('co').value   = c.objetivo_dia||10;
+    // Martingala
+    const mActiva = c.martingala_activa || false;
+    document.getElementById('cm_activa').checked = mActiva;
+    document.getElementById('cm_mult').value    = c.martingala_mult || 2;
+    document.getElementById('cm_niveles').value = c.martingala_niveles || 1;
+    toggleMartingala(mActiva);
+    if (c.pares && c.pares.length) paresActivos = c.pares;
+    if (c.ifc_modo_por_par && typeof c.ifc_modo_por_par === 'object') modoPorPar = Object.assign({}, c.ifc_modo_por_par);
+    if (c.ifc_modo) modoGlobal = c.ifc_modo;
+
+    // Si algún par guardado en config no está en paresDetectados aún
+    // (porque no se ha pulsado "Detectar pares" todavía), lo añadimos
+    // como entrada básica para que aparezca marcado en la UI.
+    const yaConocidos = new Set(paresDetectados.otc.map(p=>p.nombre_real));
+    paresActivos.forEach(pn => {
+      if (yaConocidos.has(pn)) return;
+      if (pn.endsWith('-OTC')) {
+        paresDetectados.otc.push({nombre_real:pn, display:pn, payout:0, abierto:true});
+        yaConocidos.add(pn);
+      } else {
+        // Par de mercado normal guardado en config: lo mostramos en la
+        // lista de normales aunque ahora esté cerrado (mientras no se
+        // haga detección, no sabemos si está abierto).
+        paresDetectados.normales.push({nombre_real:pn, display:pn, payout:0, abierto:true});
+      }
+    });
+    if (c.timeframe) {
+      tfActual = c.timeframe / 60;
+      setTF(tfActual);
+    }
+    renderParesList();
+  } catch(e){ renderParesList(); }
+}
+
+// ── Control bot ───────────────────────────────────────────────
+async function iniciarBot() {
+  const c = getCfg();
+  if (!c.usuario||!c.password){alert('Ingresa email y contraseña primero.');return;}
+  document.getElementById('btnI').disabled = true;
+  document.getElementById('btnD').disabled = false;
+  document.getElementById('btnR').disabled = true;
+  const r = await postJSON('/api/iniciar', c);
+  const d = await r.json();
+  if (!d.ok){
+    alert('Error: '+d.error);
+    document.getElementById('btnI').disabled = false;
+    document.getElementById('btnD').disabled = true;
+    document.getElementById('btnR').disabled = false;
+    return;
+  }
+  poll = setInterval(actualizar, 1500);
+}
+
+async function detenerBot() {
+  await postJSON('/api/detener', {});
+  clearInterval(poll);
+  document.getElementById('btnI').disabled = false;
+  document.getElementById('btnD').disabled = true;
+  document.getElementById('btnR').disabled = false;
+}
+
+// ── Polling ───────────────────────────────────────────────────
+async function actualizar() {
+  try {
+    const r = await fetch('/api/estado');
+    const e = await r.json();
+    // SECURITY: capturamos el CSRF token del estado para usarlo en POSTs.
+    if (e.csrf_token) _CSRF_TOKEN = e.csrf_token;
+    render(e);
+  } catch(err){}
+}
+
+function render(e) {
+  ultimoEstado = e;
+  const dot = document.getElementById('cdot');
+  const lbl = document.getElementById('clabel');
+  if (e.corriendo && e.conectado)     { dot.className='dot on';   lbl.textContent='Conectado · operando'; }
+  else if (e.corriendo)               { dot.className='dot wait'; lbl.textContent='Conectando...'; }
+  else                                { dot.className='dot off';  lbl.textContent='Detenido'; }
+
+  const mb = document.getElementById('mbadge');
+  mb.textContent = e.modo||'DEMO';
+  mb.className = 'badge '+(e.modo==='REAL'?'badge-real':'badge-demo');
+
+  const bal = e.balance||0;
+  document.getElementById('mbal').textContent = '$'+bal.toFixed(2);
+  document.getElementById('mmodo').textContent = e.modo==='REAL'?'Cuenta real':'Cuenta demo';
+  const neto = e.neto||0;
+  const nel = document.getElementById('mneto');
+  nel.textContent = (neto>=0?'+':'')+'\$'+neto.toFixed(2);
+  nel.className = 'mval '+(neto>0?'green':neto<0?'red':'');
+  document.getElementById('mnetsub').textContent = ((e.wins||0)+(e.losses||0))+' operaciones';
+  document.getElementById('mwl').textContent = (e.wins||0)+' / '+(e.losses||0);
+  const tot = (e.wins||0)+(e.losses||0);
+  document.getElementById('mpct').textContent = tot>0?Math.round(e.wins/tot*100)+'% acierto':'—% acierto';
+  const rp = parseFloat(document.getElementById('cr').value)/100;
+  const mont = Math.max(parseFloat(document.getElementById('cmin').value), Math.min(parseFloat(document.getElementById('cmax').value), bal*rp));
+  document.getElementById('mmonto').textContent = '\$'+mont.toFixed(2);
+  document.getElementById('mriesgo').textContent = document.getElementById('cr').value+'% del balance';
+
+  // Martingala en vivo
+  const nLive = document.getElementById('mart_nivel_live');
+  const mLive = document.getElementById('mart_monto_live');
+  if (nLive && e.martingala_nivel !== undefined) {
+    nLive.textContent = e.martingala_nivel + '/' + (parseInt(document.getElementById('cm_niveles').value)||1);
+    mLive.textContent = '\$' + (e.martingala_monto||0).toFixed(2);
+  }
+
+  const pe = e.pares_estado||{};
+  // Mostrar los pares que el bot está operando DE VERDAD (los que eligió
+  // el escáner / rotación), no los checkboxes de la interfaz.
+  const activosActuales = (e.pares_operando && e.pares_operando.length) ? e.pares_operando : (e.pares_activos || paresActivos);
+  document.getElementById('pgrid').innerHTML = activosActuales.map(par=>{
+    const p = pe[par]||{};
+    const s = p['señal']||p.senal||'—';
+    const bc = s==='BUY'?'pbuy':s==='SELL'?'psell':'pnone';
+    return `<div class="par"><div><div class="pname">${par}</div></div><span class="pbadge ${bc}">${s}</span></div>`;
+  }).join('');
+
+  const ms=parseInt(document.getElementById('cs').value)||3;
+  const md=parseInt(document.getElementById('cd').value)||5;
+  const mo=parseInt(document.getElementById('co').value)||10;
+  document.getElementById('sbars').innerHTML=[
+    {l:'Pérdidas seguidas',v:e.perdidas_seguidas||0,m:ms,c:'#f0614a'},
+    {l:'Pérdidas del día',  v:e.losses||0,           m:md,c:'#f5c842'},
+    {l:'Wins objetivo',     v:e.wins||0,              m:mo,c:'#1fc98e'},
+  ].map(b=>`<div class="sbar"><div class="shead"><span>${b.l}</span><span>${b.v}/${b.m}</span></div>
+    <div class="prog"><div class="pfill" style="width:${Math.min(100,b.v/b.m*100)}%;background:${b.c};"></div></div></div>`).join('');
+  const parado = (e.perdidas_seguidas>=ms||(e.losses||0)>=md||(e.wins||0)>=mo);
+  document.getElementById('stopst').textContent = parado?'⚠ STOP':'OK';
+  document.getElementById('stopst').style.color = parado?'var(--red)':'var(--green)';
+
+  if (e.operaciones&&e.operaciones.length) {
+    document.getElementById('otbody').innerHTML = e.operaciones.slice(0,20).map(op=>{
+      const gc=op.ganancia>0?'color:var(--green)':op.ganancia<0?'color:var(--red)':'';
+      const rc=op.resultado==='win'?'wrow':op.resultado==='loss'?'lrow':'';
+      return `<tr class="${rc}"><td>${op.par}</td>
+        <td style="${op.direccion==='BUY'?'color:var(--green)':'color:var(--red)'}">${op.direccion}</td>
+        <td>\$${op.monto.toFixed(2)}</td>
+        <td style="${gc}">${(op.ganancia>=0?'+':'')+'\$'+op.ganancia.toFixed(2)}</td>
+        <td>\$${op.balance.toFixed(2)}</td>
+        <td>${(op.fecha||'').split(' ')[1]||'—'}</td></tr>`;
+    }).join('');
+  }
+
+  if (e.log&&e.log.length) {
+    document.getElementById('logbox').innerHTML = e.log.slice(0,80).map(l=>{
+      const cls=l.includes('✅')||l.includes('WIN')?'lwin':l.includes('❌')||l.includes('STOP')?'lloss':l.includes('⚠')?'lwarn':'';
+      const m=l.match(/^\[(\d{2}:\d{2}:\d{2})\] (.*)/s);
+      return m?`<div class="ll"><span class="lt">${m[1]}</span><span class="${cls}">${m[2]}</span></div>`
+              :`<div class="ll"><span class="${cls}">${l}</span></div>`;
+    }).join('');
+  }
+
+  if (perf&&e.operaciones&&e.operaciones.length) {
+    let acum=0;
+    const labels=['Inicio'], data=[0];
+    [...e.operaciones].reverse().forEach(op=>{
+      acum=Math.round((acum+op.ganancia)*100)/100;
+      labels.push((op.fecha||'').split(' ')[1]?.substring(0,5)||'');
+      data.push(acum);
+    });
+    perf.data.labels=labels; perf.data.datasets[0].data=data; perf.update('none');
+  }
+
+  const tPares = document.getElementById('t-pares');
+  if (tPares && tPares.style.display !== 'none') { renderResumenPares(); renderResumenHorarios(); }
+}
+
+// ── Resumen por par ──────────────────────────────────────────
+function renderResumenPares() {
+  const tbody = document.getElementById('parestbody');
+  if (!tbody) return;
+  const ops = (ultimoEstado && ultimoEstado.operaciones) || [];
+  if (!ops.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted);">Sin operaciones aún</td></tr>';
+    return;
+  }
+
+  const resumen = {};
+  ops.forEach(op => {
+    if (!resumen[op.par]) resumen[op.par] = { wins:0, losses:0, neto:0 };
+    if (op.resultado === 'win')  resumen[op.par].wins++;
+    if (op.resultado === 'loss') resumen[op.par].losses++;
+    resumen[op.par].neto += (op.ganancia || 0);
+  });
+
+  const filas = Object.keys(resumen).map(par => {
+    const r = resumen[par];
+    const total = r.wins + r.losses;
+    const efectividad = total > 0 ? Math.round((r.wins / total) * 100) : 0;
+    return { par, ...r, total, efectividad };
+  });
+
+  // Ordenar de mejor a peor efectividad (y por neto si hay empate)
+  filas.sort((a, b) => b.efectividad - a.efectividad || b.neto - a.neto);
+
+  tbody.innerHTML = filas.map(f => {
+    const netoColor = f.neto > 0 ? 'color:var(--green)' : f.neto < 0 ? 'color:var(--red)' : '';
+    const efColor = f.efectividad >= 55 ? 'color:var(--green)' : f.efectividad < 45 ? 'color:var(--red)' : '';
+    return `<tr>
+      <td>${f.par}</td>
+      <td style="color:var(--green)">${f.wins}</td>
+      <td style="color:var(--red)">${f.losses}</td>
+      <td>${f.total}</td>
+      <td style="${efColor}">${f.efectividad}%</td>
+      <td style="${netoColor}">${(f.neto>=0?'+':'')}\\$${f.neto.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Resumen por horario ──────────────────────────────────────
+function renderResumenHorarios() {
+  const tbody = document.getElementById('horatbody');
+  if (!tbody) return;
+  const ops = (ultimoEstado && ultimoEstado.operaciones) || [];
+  if (!ops.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted);">Sin operaciones aún</td></tr>';
+    return;
+  }
+
+  // Agrupar por franja de 1 hora usando la hora de la fecha (HH:MM:SS)
+  const resumen = {};
+  ops.forEach(op => {
+    const partes = (op.fecha || '').split(' ');
+    const hora = partes[1] ? partes[1].split(':')[0] : null;
+    if (hora === null) return;
+    const franja = hora.padStart(2, '0') + ':00 - ' + hora.padStart(2, '0') + ':59';
+    if (!resumen[franja]) resumen[franja] = { hora: parseInt(hora), wins:0, losses:0 };
+    if (op.resultado === 'win')  resumen[franja].wins++;
+    if (op.resultado === 'loss') resumen[franja].losses++;
+  });
+
+  const filas = Object.keys(resumen).map(franja => {
+    const r = resumen[franja];
+    const total = r.wins + r.losses;
+    const efectividad = total > 0 ? Math.round((r.wins / total) * 100) : 0;
+    return { franja, hora:r.hora, ...r, total, efectividad };
+  });
+
+  // Ordenar cronológicamente por hora del día
+  filas.sort((a, b) => a.hora - b.hora);
+
+  tbody.innerHTML = filas.map(f => {
+    const efColor = f.efectividad >= 55 ? 'color:var(--green)' : f.efectividad < 45 ? 'color:var(--red)' : '';
+    return `<tr>
+      <td>${f.franja}</td>
+      <td style="color:var(--green)">${f.wins}</td>
+      <td style="color:var(--red)">${f.losses}</td>
+      <td>${f.total}</td>
+      <td style="${efColor}">${f.efectividad}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Helper POST con CSRF ─────────────────────────────────────
+// SECURITY: todos los POST envían el token CSRF leído de /api/estado.
+// Si el token no coincide en el servidor, el POST se rechaza (403).
+// Así una web maliciosa que visites no puede llamar a /api/iniciar etc.
+let _CSRF_TOKEN = '';
+async function _refrescarCSRF() {
+  try {
+    const r = await fetch('/api/estado'); const e = await r.json();
+    _CSRF_TOKEN = e.csrf_token || '';
+  } catch(e) {}
+}
+async function postJSON(url, payload) {
+  if (!_CSRF_TOKEN) await _refrescarCSRF();
+  const hacer = () => fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': _CSRF_TOKEN,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  let r = await hacer();
+  // Si el servidor se reinició con la página abierta, el token CSRF del
+  // navegador queda viejo y TODOS los POST devuelven 403 ("da error"
+  // sin explicación). Renovamos el token una vez y reintentamos.
+  if (r.status === 403) {
+    await _refrescarCSRF();
+    r = await hacer();
+  }
+  return r;
+}
+
+window.onload = () => cargarCfg();
+</script>
+<a href="/backtest" target="_blank" style="position:fixed;bottom:60px;right:16px;z-index:99999;background:#3fb950;color:#08131f;font-weight:700;text-decoration:none;padding:10px 14px;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);">Backtest IFC</a>
+<a href="/diagnostico" target="_blank" style="position:fixed;bottom:16px;right:16px;z-index:99999;background:#58a6ff;color:#08131f;font-weight:700;text-decoration:none;padding:10px 14px;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);">Diagnostico de pares</a>
+</body>
+</html>
