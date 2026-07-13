@@ -177,7 +177,7 @@ _BACKTEST_HTML = """<!DOCTYPE html>
  <div class="card"><b>Antes:</b> dale a <b>Iniciar bot</b> en la otra pestaña y espera a <b>Conectado</b>. Traer el histórico tarda unos segundos.</div>
  <div class="card">
   <div class="row">
-   <div><label>Estrategia</label><select id="estrategia"><option value="ifc">IFC (indecisi&oacute;n-fuerza)</option><option value="ifcpro">IFC-Pro (rompe nivel + retroceso)</option><option value="nr">NR (N&uacute;mero Redondo - El Hermoso)</option><option value="facundo">Facundo (price action en S/R)</option></select></div>
+   <div><label>Estrategia</label><select id="estrategia"><option value="ifc">IFC (indecisi&oacute;n-fuerza)</option><option value="ifcpro">IFC-Pro (rompe nivel + retroceso)</option><option value="nr">NR (N&uacute;mero Redondo - El Hermoso)</option><option value="facundo">Facundo (price action en S/R)</option><option value="sintetico">SINTETICO (Deriv: Boom/Crash/Volatility)</option></select></div>
    <div><label>Par</label><select id="par"></select></div>
    <div><label>Velas históricas</label><input id="velas" type="number" value="3000" min="500" max="10000" style="width:110px"></div>
    <button onclick="run()">Ejecutar backtest</button>
@@ -191,7 +191,7 @@ const OTC_TODOS=['EURUSD-OTC','GBPUSD-OTC','USDJPY-OTC','EURGBP-OTC','EURJPY-OTC
 async function cargarPares(){
  const sel=document.getElementById('par'); const vistos={};
  let extra=[];
- try{ const r=await fetch('/api/config'); const c=await r.json(); extra=(c.pares||[]).concat(c.pares_normales||[]);
+ try{ const r=await fetch('/api/config'); const c=await r.json(); extra=(c.pares||[]).concat(c.pares_normales||[]).concat(c.pares_deriv||[]);
       const se=document.getElementById('estrategia'); if(se && c.estrategia) se.value=c.estrategia; }catch(e){}
  OTC_TODOS.concat(extra).forEach(p=>{ if(!vistos[p]){vistos[p]=1; const o=document.createElement('option'); o.value=p;o.textContent=p; sel.appendChild(o);} });
 }
@@ -433,7 +433,7 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer((HOST, PORT), Handler)
 
     print("\n" + "=" * 45)
-    print("  Bot IFC Auto — servidor iniciado (sin Flask)")
+    print("  BOT JPH TRADING — servidor iniciado (sin Flask)")
     print(f"  Abre tu navegador en: http://localhost:{PORT}")
     print(f"  Diagnostico de pares: http://localhost:{PORT}/diagnostico")
     print("  Deja esta ventana abierta mientras opera.")

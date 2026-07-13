@@ -16,7 +16,7 @@ def broker_actual(config):
     return (config.get("broker") or "iq").strip().lower()
 
 
-def crear_conector(config):
+def crear_conector(config, logger=None):
     broker = broker_actual(config)
 
     if broker == "deriv":
@@ -26,6 +26,8 @@ def crear_conector(config):
             app_id=config.get("deriv_app_id", "1089"),
             modo=config.get("modo", "PRACTICE"),
             simbolos=config.get("pares_deriv") or None,
+            payout_min=config.get("deriv_payout_min", 0),
+            logger=logger or print,
         )
 
     # Por defecto: IQ Option (comportamiento de siempre)

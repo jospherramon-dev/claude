@@ -56,7 +56,9 @@ Este conector de Deriv es nuevo y **debe validarse en demo** antes de arriesgar 
   soportes/resistencias "reales". Por eso, en Deriv el bot **no usa** el escáner ni la
   auto-calibración de forex: opera directamente la lista de índices que configuraste.
 - Las estrategias pensadas para forex (números redondos, S/R) **pueden no rendir igual**
-  en sintéticos. Conviene medir con el backtest antes de confiarles dinero.
+  en sintéticos. El bot incluye una estrategia dedicada: **SINTETICO** — spike-ride en
+  Boom/Crash y reversión z-score en Volatility. Especificación completa, resultados
+  medidos y configuración recomendada en **`docs/ESTRATEGIA_SINTETICOS.md`**.
 - ⚠️ **La martingala es especialmente peligrosa en sintéticos** (pueden encadenar
   rachas largas). Úsala con mucha prudencia o déjala apagada.
 

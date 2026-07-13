@@ -35,11 +35,18 @@ SIMBOLOS_DEFECTO = [
 
 
 class ConectorDeriv:
-    def __init__(self, token="", app_id="1089", modo="PRACTICE", simbolos=None):
+    def __init__(self, token="", app_id="1089", modo="PRACTICE", simbolos=None,
+                 payout_min=0.0, logger=None):
         self.token = (token or "").strip()
         self.app_id = str(app_id or "1089").strip()
         self.modo = modo or "PRACTICE"
+        # Payout mínimo del contrato en % (0 = no bloquear, solo registrar).
+        # En Boom/Crash ir a favor de la deriva paga poco; este guard evita
+        # operar contratos cuyo retorno no compensa según tu configuración.
+        self.payout_min = float(payout_min or 0)
+        self._log = logger or (lambda *_a, **_k: None)
         self._simbolos = list(simbolos) if simbolos else list(SIMBOLOS_DEFECTO)
+        self.ultimo_payout_pct = None   # payout % del último proposal (visible para el bot)
         self._ws = None
         self._lock = threading.Lock()     # serializa peticiones sobre el socket
         self._req_id = 0
@@ -198,6 +205,22 @@ class ConectorDeriv:
         ask = p.get("ask_price")
         if not pid:
             return (False, "Deriv no devolvió id de proposal")
+
+        # ── GUARD DE PAYOUT ──────────────────────────────────
+        # payout% = lo que GANAS neto si aciertas, relativo a lo apostado.
+        # Ej: apuestas 10 y el contrato paga 19.50 -> payout 95%.
+        try:
+            pago_total = float(p.get("payout") or 0)
+            costo = float(ask or 0)
+            if costo > 0 and pago_total > 0:
+                payout_pct = (pago_total - costo) / costo * 100.0
+                self.ultimo_payout_pct = round(payout_pct, 1)
+                self._log(f"[DERIV] {par} {ct}: payout del contrato {payout_pct:.1f}%")
+                if self.payout_min > 0 and payout_pct < self.payout_min:
+                    return (False, f"payout {payout_pct:.1f}% < mínimo configurado "
+                                   f"{self.payout_min:.0f}% (deriv_payout_min) — entrada descartada")
+        except Exception:
+            pass
         try:
             b = self._enviar({"buy": pid, "price": ask}, timeout=20)
         except Exception as e:

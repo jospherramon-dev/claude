@@ -79,7 +79,7 @@ def _abrir_ventana(url):
         return
 
     webview.create_window(
-        "Bot IFC Auto",
+        "BOT JPH TRADING",
         url,
         width=1180,
         height=820,

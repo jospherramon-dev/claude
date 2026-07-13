@@ -1,4 +1,4 @@
-# Dependencias del Bot IFC Auto (app de escritorio)
+# Dependencias de BOT JPH TRADING (app de escritorio)
 requests>=2.25
 iqoptionapi
 pywebview>=4.0

@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
-title Bot IFC Auto - Instalador
+title BOT JPH TRADING - Instalador
 color 0A
 cd /d "%~dp0"
 
 echo.
 echo  ==================================================
-echo    Bot IFC Auto - Instalador de la app de escritorio
+echo    BOT JPH TRADING - Instalador de la app de escritorio
 echo  ==================================================
 echo.
 
@@ -50,26 +50,29 @@ if exist "%APPDIR%icono.ico" set "ICON=%APPDIR%icono.ico"
 
 echo  Creando acceso directo en el Escritorio...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$viejo = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Bot IFC Auto.lnk';" ^
+  "if (Test-Path $viejo) { Remove-Item $viejo }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ws = New-Object -ComObject WScript.Shell;" ^
   "$desk = [Environment]::GetFolderPath('Desktop');" ^
-  "$lnk = $ws.CreateShortcut((Join-Path $desk 'Bot IFC Auto.lnk'));" ^
+  "$lnk = $ws.CreateShortcut((Join-Path $desk 'BOT JPH TRADING.lnk'));" ^
   "$lnk.TargetPath = '!TARGET!';" ^
   "$lnk.Arguments = '!ARGS!';" ^
   "$lnk.WorkingDirectory = '%APPDIR%';" ^
   "if ('!ICON!' -ne '') { $lnk.IconLocation = '!ICON!' };" ^
-  "$lnk.Description = 'Bot IFC Auto';" ^
+  "$lnk.Description = 'BOT JPH TRADING';" ^
   "$lnk.Save();"
 
 if errorlevel 1 (
     echo  [AVISO] No pude crear el acceso directo automaticamente.
     echo         Puedes abrir la app con:  pythonw app_escritorio.py
 ) else (
-    echo  [OK] Acceso directo "Bot IFC Auto" creado en tu Escritorio.
+    echo  [OK] Acceso directo "BOT JPH TRADING" creado en tu Escritorio.
 )
 echo.
 echo  ==================================================
 echo    Listo. Ya puedes cerrar esta ventana y abrir
-echo    "Bot IFC Auto" desde el Escritorio.
+echo    "BOT JPH TRADING" desde el Escritorio.
 echo  ==================================================
 echo.
 pause
