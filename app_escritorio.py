@@ -98,32 +98,41 @@ def _esperar_servidor(host, port, timeout=20):
 
 # ── 3) Ventana de escritorio ─────────────────────────────────
 def _abrir_ventana(url):
+    # Por defecto usamos el NAVEGADOR: es lo más fiable en cualquier Python.
+    # La ventana propia (pywebview) es opcional y solo se intenta si pones
+    # la variable BOT_IFC_VENTANA=1 — porque en algunos Python nuevos pywebview
+    # cuelga o cierra el proceso al abrir la ventana.
+    if os.environ.get("BOT_IFC_VENTANA") == "1":
+        try:
+            import webview
+            _log("[VENTANA] Abriendo ventana de escritorio (pywebview)...")
+            webview.create_window(
+                "BOT JPH TRADING", url,
+                width=1180, height=820, min_size=(900, 640), confirm_close=True)
+            webview.start()   # bloquea hasta que se cierra la ventana
+            return
+        except Exception:
+            _log("[VENTANA] pywebview falló; sigo en el navegador:\n" + traceback.format_exc())
+
+    _log("[VENTANA] Abriendo el panel en el navegador: " + url)
     try:
-        import webview
-    except Exception:
-        # Sin pywebview (habitual en Python muy nuevo): abrimos en el
-        # navegador. La app sigue corriendo igual.
-        _log("[VENTANA] pywebview no está instalado; abro en el navegador: " + url)
         import webbrowser
         webbrowser.open(url)
-        _log("[VENTANA] Navegador abierto. Deja esta ventana/proceso vivo mientras operas.")
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            pass
-        return
-
-    _log("[VENTANA] Abriendo ventana de escritorio (pywebview).")
-    webview.create_window(
-        "BOT JPH TRADING",
-        url,
-        width=1180,
-        height=820,
-        min_size=(900, 640),
-        confirm_close=True,
-    )
-    webview.start()   # bloquea hasta que se cierra la ventana
+    except Exception:
+        _log("[VENTANA] No pude abrir el navegador automáticamente.")
+    # Aviso GRANDE y claro por si el navegador no se abrió solo.
+    print("\n\n" + "=" * 52, flush=True)
+    print("   BOT JPH TRADING ESTÁ LISTO.", flush=True)
+    print("   Si no se abrió solo, entra en tu navegador a:", flush=True)
+    print("        " + url, flush=True)
+    print("   (Deja esta ventana abierta mientras el bot opera)", flush=True)
+    print("=" * 52 + "\n", flush=True)
+    _log("[APP] Listo. Panel en " + url)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
 
 
 def main():
