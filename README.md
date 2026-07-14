@@ -1,4 +1,4 @@
-# Bot IFC Auto — App de escritorio
+# BOT JPH TRADING — App de escritorio
 
 Bot de trading para IQ Option con panel de control. Ahora funciona como una
 **aplicación de escritorio con su propia ventana** y se **actualiza sola** desde
@@ -14,10 +14,13 @@ este repositorio de GitHub.
    en una carpeta fija, por ejemplo `C:\BotIFCAuto`.
 3. Doble clic en **`instalar.bat`**.
    - Instala las dependencias.
-   - Crea el acceso directo **"Bot IFC Auto"** en tu Escritorio.
+   - Crea el acceso directo **"BOT JPH TRADING"** en tu Escritorio.
 
 Listo. A partir de ahí abres el bot desde ese ícono del Escritorio: se abre en
 su **propia ventana**, no en el navegador.
+
+> El acceso directo usa el logo **JPH.BOT** (`icono.ico`). Si cambias el logo,
+> vuelve a ejecutar `instalar.bat` para refrescar el ícono del Escritorio.
 
 > La primera vez, Windows puede pedir instalar el runtime **WebView2** (viene de
 > serie en Windows 10/11 actualizados). Si hiciera falta, se descarga de Microsoft.
@@ -52,9 +55,12 @@ variable de entorno `BOT_IFC_GH_TOKEN`. Si el repo es público, no hace falta na
 
 ## 3) Uso diario
 
-- Abre **"Bot IFC Auto"** desde el Escritorio.
-- Pon tu usuario/contraseña de IQ Option, elige modo (PRACTICE/REAL) y dale a
-  **Iniciar bot**.
+- Abre **"BOT JPH TRADING"** desde el Escritorio.
+- Elige el **Bróker**: **IQ Option** (forex/OTC) o **Deriv** (índices sintéticos).
+  Puedes cambiar entre ellos cuando quieras — cada uno guarda sus credenciales.
+  - IQ Option: usuario/contraseña.
+  - Deriv: token de API (ver **`docs/DERIV.md`** para la guía paso a paso).
+- Elige modo (PRACTICE/REAL) y dale a **Iniciar bot**.
 - Herramientas incluidas en el panel: diagnóstico de pares, backtest y
   estadísticas (con exportación a Excel/CSV).
 

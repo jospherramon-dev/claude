@@ -26,14 +26,44 @@
 import time, json, os, threading, traceback, datetime, requests, math
 import csv as _csv
 import io as _io
-from iqoptionapi.stable_api import IQ_Option
+try:
+    from iqoptionapi.stable_api import IQ_Option
+except Exception:
+    IQ_Option = None   # permite usar el bot en modo Deriv sin iqoptionapi
+from brokers import crear_conector, broker_actual
 
 # =============================================================
 # CONFIGURACIÓN
 # =============================================================
 config = {
+    # ── BRÓKER ACTIVO ────────────────────────────────────────────────
+    # "iq"    -> IQ Option (forex/OTC). Usa usuario + password.
+    # "deriv" -> Deriv (índices sintéticos). Usa deriv_token (NO password).
+    # Puedes cambiar de bróker cuando quieras desde el panel; cada uno
+    # guarda sus propias credenciales y su propia lista de pares.
+    "broker":               "iq",
     "usuario":              "",
     "password":             "",
+    # Credenciales / ajustes de Deriv
+    "deriv_token":          "",
+    "deriv_app_id":         "1089",   # app_id público de pruebas de Deriv
+    "pares_deriv":          ["R_75", "R_100", "R_50"],
+    # ── ESTRATEGIA "SINTETICO" (para índices sintéticos de Deriv) ─────
+    # Dos motores, elegidos AUTOMÁTICAMENTE según el índice:
+    #  · BOOM*/CRASH* -> SPIKE-RIDE: opera a favor de la deriva estructural
+    #    (Crash sube entre caídas -> CALL; Boom baja entre subidas -> PUT),
+    #    evitando entrar justo después de un spike.
+    #  · R_*/1HZ* (Volatility) -> REVERSIÓN Z-SCORE: entra contra extremos
+    #    estadísticos (z-score alto + racha de velas del mismo color).
+    "sintetico_spike_factor":     5.0,  # rango > factor×mediana = spike
+    "sintetico_post_spike_velas": 3,    # velas de espera tras un spike
+    "sintetico_z_periodo":        20,   # ventana del z-score (Volatility)
+    "sintetico_z_umbral":         1.8,  # |z| mínimo para señal
+    "sintetico_racha_min":        3,    # velas seguidas del mismo color
+    # Payout mínimo del contrato en Deriv (0 = solo registrar en log, no
+    # bloquear). Si >0, el bot NO entra cuando el payout del contrato es
+    # menor — clave en Boom/Crash, donde ir a favor de la deriva paga poco.
+    "deriv_payout_min":           0,
     "modo":                 "PRACTICE",   # "PRACTICE" o "REAL"
     "pares":                ["EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "EURGBP-OTC"],
     # ── Mercado normal (forex real, sin "-OTC") ───────────────────────
@@ -516,6 +546,22 @@ def cargar_config():
 def guardar_config():
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def _faltan_credenciales(cfg):
+    """Devuelve un mensaje de error si faltan credenciales para el bróker
+    activo, o "" si están completas. Deriv usa token; IQ usa usuario+clave."""
+    if broker_actual(cfg) == "deriv":
+        if not (cfg.get("deriv_token") or "").strip():
+            return ("Falta el token de Deriv. En el panel, pega tu token de "
+                    "Deriv (Settings → API token) y guarda la configuración.")
+        return ""
+    usuario  = (cfg.get("usuario") or "").strip()
+    password = cfg.get("password") or ""
+    if not usuario or not password:
+        return ("Falta email o contraseña de IQ Option. Escríbelos en "
+                "Configuración y guarda (o inicia el bot una vez).")
+    return ""
 
 
 # =============================================================
@@ -2595,11 +2641,149 @@ def _analizar_facundo(velas, par=None):
     return senal, razon
 
 
+# =============================================================
+# ESTRATEGIA: SINTETICO (índices sintéticos de Deriv)
+#
+# Los sintéticos NO son forex: son series generadas por un RNG con
+# propiedades publicadas. Por eso esta estrategia NO usa S/R ni números
+# redondos — usa la ESTRUCTURA matemática de cada índice:
+#
+#  · CRASH*: el precio SUBE de forma sostenida entre caídas (spikes)
+#    que ocurren, en promedio, 1 vez cada N ticks (Crash 500 = 1/500).
+#    En una vela M1 (~60 ticks) la probabilidad estructural de que NO
+#    haya spike es alta -> se opera CALL, salvo justo tras un spike.
+#  · BOOM*: espejo exacto -> se opera PUT.
+#  · R_* / 1HZ* (Volatility): movimiento browniano puro. No hay
+#    tendencia explotable; el motor de reversión entra contra extremos
+#    estadísticos (z-score + racha) y sirve para MEDIR en el backtest
+#    si tu cuenta/feed muestra algún borde real antes de arriesgar.
+#
+# ⚠ HONESTIDAD: en Boom/Crash el winrate estructural es alto pero el
+# payout que Deriv ofrece por ir a favor de la deriva es BAJO (el
+# precio del contrato ya descuenta la estructura). El backtest y el
+# guard de payout (deriv_payout_min) están para que las decisiones se
+# tomen con números medidos, no con ilusión. Valida SIEMPRE en demo.
+# =============================================================
+
+def _sintetico_tipo(par):
+    """Clasifica el índice sintético: 'crash', 'boom', 'vol' u 'otro'."""
+    p = (par or "").upper()
+    if p.startswith("CRASH"):
+        return "crash"
+    if p.startswith("BOOM"):
+        return "boom"
+    if p.startswith("R_") or p.startswith("1HZ") or p.startswith("RDB"):
+        return "vol"
+    return "otro"
+
+
+def _sintetico_hubo_spike(velas, tipo, factor, mirar):
+    """True si en las últimas 'mirar' velas hubo un spike: una vela cuyo
+    rango supera 'factor' × la mediana de rangos recientes, en la
+    dirección del spike del índice (abajo en Crash, arriba en Boom)."""
+    if len(velas) < 30:
+        return True   # sin historia suficiente, mejor no operar
+    rangos = sorted((v["max"] - v["min"]) for v in velas[-100:])
+    mediana = rangos[len(rangos) // 2] or 1e-12
+    for v in velas[-mirar:]:
+        rango = v["max"] - v["min"]
+        if rango > factor * mediana:
+            bajista = v["close"] < v["open"]
+            if (tipo == "crash" and bajista) or (tipo == "boom" and not bajista):
+                return True
+            # spike de rango sin dirección clara: también lo respetamos
+            if abs(v["close"] - v["open"]) < 0.3 * rango:
+                return True
+    return False
+
+
+def _sintetico_z_score(velas, periodo):
+    """z-score del último cierre frente a la media/desviación de los
+    'periodo' cierres anteriores. None si no hay datos suficientes."""
+    if len(velas) < periodo + 1:
+        return None
+    cierres = [v["close"] for v in velas[-(periodo + 1):-1]]
+    media = sum(cierres) / len(cierres)
+    var = sum((c - media) ** 2 for c in cierres) / len(cierres)
+    desv = var ** 0.5
+    if desv <= 0:
+        return None
+    return (velas[-1]["close"] - media) / desv
+
+
+def _sintetico_racha(velas):
+    """(color, n): color de la última vela ('alcista'/'bajista') y cuántas
+    velas seguidas del mismo color cierran la serie."""
+    n = 0
+    color = None
+    for v in reversed(velas):
+        c = "alcista" if v["close"] > v["open"] else ("bajista" if v["close"] < v["open"] else None)
+        if c is None:
+            break
+        if color is None:
+            color = c
+        if c != color:
+            break
+        n += 1
+    return color, n
+
+
+def detectar_sintetico(velas, par=None,
+                       spike_factor=None, post_spike=None,
+                       z_periodo=None, z_umbral=None, racha_min=None):
+    """Núcleo de la estrategia SINTETICO. Devuelve ("CALL"/"PUT", razon)
+    o (None, razon). Parámetros explícitos para que el backtest pueda
+    correr sin mutar la config global."""
+    spike_factor = spike_factor if spike_factor is not None else config.get("sintetico_spike_factor", 5.0)
+    post_spike   = post_spike   if post_spike   is not None else config.get("sintetico_post_spike_velas", 3)
+    z_periodo    = z_periodo    if z_periodo    is not None else config.get("sintetico_z_periodo", 20)
+    z_umbral     = z_umbral     if z_umbral     is not None else config.get("sintetico_z_umbral", 1.8)
+    racha_min    = racha_min    if racha_min    is not None else config.get("sintetico_racha_min", 3)
+
+    tipo = _sintetico_tipo(par)
+
+    if tipo in ("crash", "boom"):
+        # SPIKE-RIDE: a favor de la deriva estructural, nunca tras un spike.
+        if _sintetico_hubo_spike(velas, tipo, spike_factor, max(1, int(post_spike))):
+            return None, f"{par}: spike reciente — esperando {post_spike} velas"
+        if tipo == "crash":
+            return "CALL", (f"COMPRA | SPIKE-RIDE {par} | deriva alcista entre "
+                            f"caídas, sin spike en las últimas {post_spike} velas")
+        return "PUT", (f"VENTA | SPIKE-RIDE {par} | deriva bajista entre "
+                       f"subidas, sin spike en las últimas {post_spike} velas")
+
+    if tipo == "vol":
+        # REVERSIÓN Z-SCORE: contra extremos estadísticos.
+        z = _sintetico_z_score(velas, int(z_periodo))
+        if z is None:
+            return None, "historia insuficiente para z-score"
+        color, n = _sintetico_racha(velas)
+        if abs(z) < z_umbral or n < racha_min:
+            return None, f"sin extremo (z={z:.2f}, racha {n})"
+        if z > 0 and color == "alcista":
+            return "PUT", (f"VENTA | REVERSIÓN {par} | z={z:.2f} sobre la media "
+                           f"+ {n} velas alcistas seguidas — extremo estadístico")
+        if z < 0 and color == "bajista":
+            return "CALL", (f"COMPRA | REVERSIÓN {par} | z={z:.2f} bajo la media "
+                            f"+ {n} velas bajistas seguidas — extremo estadístico")
+        return None, f"z y racha no coinciden (z={z:.2f}, racha {color} {n})"
+
+    return None, f"{par}: índice no reconocido como sintético"
+
+
+def _analizar_sintetico(velas, par=None):
+    """Wrapper con la firma que esperan loop_par/backtest: (señal, razón)."""
+    direccion, razon = detectar_sintetico(velas, par=par)
+    if direccion is None:
+        return "NONE", razon
+    return ("BUY" if direccion == "CALL" else "SELL"), razon
+
+
 def analizar(velas, estado_senal=None, par=None):
     """Despachador de estrategia: enruta a la estrategia elegida en la
-    config ("ifc", "ifcpro", "nr" o "facundo"). 'par' permite que IFC
-    use el modo propio del par asignado por la auto-calibración. Mantiene
-    la firma que esperan loop_par, el warmup y el backtest."""
+    config ("ifc", "ifcpro", "nr", "facundo" o "sintetico"). 'par' permite
+    que IFC use el modo propio del par asignado por la auto-calibración.
+    Mantiene la firma que esperan loop_par, el warmup y el backtest."""
     estrategia = config.get("estrategia", "ifc")
     if estrategia == "nr":
         return _analizar_nr(velas, par=par)
@@ -2607,6 +2791,8 @@ def analizar(velas, estado_senal=None, par=None):
         return _analizar_ifcpro(velas)
     if estrategia == "facundo":
         return _analizar_facundo(velas, par=par)
+    if estrategia == "sintetico":
+        return _analizar_sintetico(velas, par=par)
     return _analizar_ifc(velas, estado_senal, par)
 
 
@@ -3009,6 +3195,58 @@ def _backtest_sobre_velas(velas, modo="continuidad", usar_ema=None, ventana=None
     }
 
 
+def _backtest_sintetico(velas, par, variante="normal",
+                        spike_factor=None, post_spike=None,
+                        z_periodo=None, z_umbral=None, racha_min=None):
+    """Backtest de la estrategia SINTETICO sobre velas históricas.
+    variante:
+      "normal"    -> la estrategia tal cual (la que operaría el bot)
+      "invertida" -> dirección contraria (para comparar en la tabla)
+      "base"      -> SIN filtros: entra en TODAS las velas a favor de la
+                     deriva (solo Boom/Crash). Es la línea base contra la
+                     que se mide si los filtros aportan algo de verdad.
+    Misma forma de salida que _backtest_sobre_velas (winrate, rachas...).
+    """
+    total = wins = losses = 0
+    buys = win_buy = sells = win_sell = 0
+    racha_actual = peor_racha = 0
+    tipo = _sintetico_tipo(par)
+    minimo = max(30, int(z_periodo or config.get("sintetico_z_periodo", 20)) + 2)
+
+    for i in range(minimo, len(velas) - 1):
+        v = velas[max(0, i - 200):i + 1]
+        if variante == "base" and tipo in ("crash", "boom"):
+            direccion = "CALL" if tipo == "crash" else "PUT"
+        else:
+            direccion, _r = detectar_sintetico(
+                v, par=par, spike_factor=spike_factor, post_spike=post_spike,
+                z_periodo=z_periodo, z_umbral=z_umbral, racha_min=racha_min)
+            if direccion is None:
+                continue
+            if variante == "invertida":
+                direccion = "PUT" if direccion == "CALL" else "CALL"
+
+        entrada = velas[i + 1]
+        if direccion == "CALL":
+            gano = entrada["close"] > entrada["open"]; buys += 1;  win_buy  += 1 if gano else 0
+        else:
+            gano = entrada["close"] < entrada["open"]; sells += 1; win_sell += 1 if gano else 0
+        total += 1
+        if gano:
+            wins += 1; racha_actual = 0
+        else:
+            losses += 1; racha_actual += 1
+            peor_racha = max(peor_racha, racha_actual)
+
+    winrate = round(wins / total * 100, 1) if total else 0.0
+    return {
+        "total": total, "wins": wins, "losses": losses, "winrate": winrate,
+        "buys": buys, "wr_buy":  round(win_buy / buys * 100, 1) if buys else 0.0,
+        "sells": sells, "wr_sell": round(win_sell / sells * 100, 1) if sells else 0.0,
+        "peor_racha_perdidas": peor_racha,
+    }
+
+
 def _fetch_historico(par, cantidad):
     """Trae 'cantidad' velas M1 históricas de 'par' en lotes, hacia atrás
     en el tiempo (get_candles devuelve como máx ~1000 por llamada)."""
@@ -3221,6 +3459,22 @@ def backtest_estrategia(par, cantidad_velas=3000, estrategia=None):
             {"nombre": "FACUNDO — Ambos · DIRECTO"+sufijo,             **_backtest_facundo(velas, "ambos",       invertir=False)},
             {"nombre": "FACUNDO — Ambos · INVERTIDO"+sufijo_inv,       **_backtest_facundo(velas, "ambos",       invertir=True)},
         ]
+    elif estrategia == "sintetico":
+        tipo = _sintetico_tipo(par)
+        if tipo in ("crash", "boom"):
+            modos = [
+                {"nombre": f"SPIKE-RIDE {tipo.upper()} (estrategia con filtros — la que opera el bot)",
+                 **_backtest_sintetico(velas, par, "normal")},
+                {"nombre": "LÍNEA BASE (todas las velas a favor de la deriva, sin filtros)",
+                 **_backtest_sintetico(velas, par, "base")},
+            ]
+        else:
+            modos = [
+                {"nombre": "REVERSIÓN Z-SCORE (la que opera el bot)",
+                 **_backtest_sintetico(velas, par, "normal")},
+                {"nombre": "CONTINUIDAD Z-SCORE (invertida, para comparar)",
+                 **_backtest_sintetico(velas, par, "invertida")},
+            ]
     else:
         usar_ema = config.get("ifc_usar_ema", True)
         modos = [
@@ -3278,16 +3532,13 @@ def _asegurar_conexion_datos():
             return False, ("El bot está iniciando o reconectando. Espera unos "
                            "segundos a que diga 'Conectado' y reintenta.")
         cargar_config()
-        usuario  = (config.get("usuario") or "").strip()
-        password = config.get("password") or ""
-        if not usuario or not password:
-            return False, ("No hay credenciales guardadas. Escribe tu email y "
-                           "contraseña en Configuración y pulsa 'Guardar "
-                           "configuración' (o inicia el bot una vez).")
+        faltan = _faltan_credenciales(config)
+        if faltan:
+            return False, faltan
         log("[DATOS] Conectando a la plataforma en modo solo-datos "
             "(backtest/detección sin iniciar el bot)...")
         try:
-            iq = IQ_Option(usuario, password)
+            iq = crear_conector(config, logger=log)
             completo, res, exc = _con_timeout(iq.connect, 45)
             if not completo:
                 return False, "La conexión tardó demasiado. Revisa tu internet y reintenta."
@@ -5122,9 +5373,10 @@ def _forzar_reconexion(motivo=""):
 def loop_bot(mi_run_id):
     global _Iq
 
-    log("Conectando con IQ Option...")
+    _nombre_broker = "Deriv" if broker_actual(config) == "deriv" else "IQ Option"
+    log(f"Conectando con {_nombre_broker}...")
     try:
-        _Iq = IQ_Option(config["usuario"], config["password"])
+        _Iq = crear_conector(config, logger=log)
         completo, conn_result, exc = _con_timeout(_Iq.connect, 25)
         if not completo:
             log("Conexión inicial colgada (sin respuesta tras 25s). Revisa tu internet e inicia de nuevo.")
@@ -5153,7 +5405,7 @@ def loop_bot(mi_run_id):
             estado["balance"]   = round(bal, 2)
         log(f"Conectado | {config['modo']} | Balance: ${bal:.2f}")
         enviar_telegram(
-            f"🤖 <b>Bot IFC conectado</b>\n"
+            f"🤖 <b>BOT JPH TRADING conectado</b>\n"
             f"Modo: {config['modo']}\n"
             f"Balance: <b>${bal:.2f}</b>\n"
             f"Pares: {', '.join(config['pares'])}"
@@ -5184,9 +5436,19 @@ def loop_bot(mi_run_id):
     # opción de mercado normal, se agregan SOLO los pares normales que
     # la API reporte como abiertos en este momento (nunca se fuerza un
     # par cerrado).
-    pares_a_operar = list(config["pares"])
+    # Bróker DERIV: se operan los índices sintéticos configurados. El
+    # escáner y la auto-calibración son de forex y NO aplican a sintéticos,
+    # así que se saltan (se opera la lista tal cual, como en modo manual).
+    _es_deriv = broker_actual(config) == "deriv"
+    if _es_deriv:
+        pares_a_operar = list(config.get("pares_deriv") or [])
+        log(f"[MODO] Bróker DERIV — operando sintéticos ({len(pares_a_operar)}): "
+            f"{', '.join(pares_a_operar) or '(lista vacía: configura pares_deriv)'}. "
+            f"Escáner/auto-calibración de forex desactivados para este bróker.")
+    else:
+        pares_a_operar = list(config["pares"])
     abiertos = []
-    if config.get("pares_normales_activo", False):
+    if config.get("pares_normales_activo", False) and not _es_deriv:
         deseados = config.get("pares_normales", [])
         abiertos, _hubo_fallo_inicial = obtener_pares_normales_abiertos(deseados)
         if abiertos:
@@ -5214,6 +5476,7 @@ def loop_bot(mi_run_id):
     # la estrategia IFC, que es la que tiene modos calibrables. ─────────
     autocal_ok = False
     if (modo_op != "manual"
+            and not _es_deriv
             and config.get("autocalibracion_activa", False)
             and config.get("estrategia", "ifc") == "ifc"):
         candidatos_cal = list(dict.fromkeys(
@@ -5243,7 +5506,7 @@ def loop_bot(mi_run_id):
     # normales que estén abiertos) y se queda SOLO con los scanner_top_n
     # de mejor tendencia. Después, los hilos de señales IFC trabajan
     # únicamente con esos elegidos.
-    if modo_op != "manual" and not autocal_ok and config.get("scanner_activo", False):
+    if modo_op != "manual" and not _es_deriv and not autocal_ok and config.get("scanner_activo", False):
         candidatos = list(dict.fromkeys(
             list(config.get("scanner_candidatos_otc", [])) +
             list(config.get("pares", [])) +
@@ -5357,7 +5620,7 @@ def loop_bot(mi_run_id):
                         estado["corriendo"] = False
                         estado["error"]     = "Se perdió la conexión y no se pudo reconectar. Reinicia el bot."
                     enviar_telegram(
-                        "⚠️ <b>Bot IFC detenido</b>\n"
+                        "⚠️ <b>BOT JPH TRADING detenido</b>\n"
                         "No se pudo reconectar a IQ Option tras varios intentos.\n"
                         "Revisa tu conexión a internet y vuelve a iniciar el bot."
                     )
@@ -5714,6 +5977,10 @@ def set_config(nueva):
     if nueva is not None and "password" in nueva and not nueva.get("password"):
         nueva = dict(nueva)
         nueva.pop("password", None)
+    # Mismo blindaje para el token de Deriv: si viene vacío, no lo borramos.
+    if nueva is not None and "deriv_token" in nueva and not nueva.get("deriv_token"):
+        nueva = dict(nueva)
+        nueva.pop("deriv_token", None)
     config.update(nueva)
     guardar_config()
 
