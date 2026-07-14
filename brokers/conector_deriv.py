@@ -123,16 +123,20 @@ class ConectorDeriv:
                       "app.deriv.com/account/api-token con permiso Trade.")
 
         # 1) Listar cuentas del token
+        url_acc = f"{REST_BASE}/trading/v1/options/accounts"
+        self._log(f"[DERIV] GET {url_acc} (app_id={self.app_id}, token={self.token[:8]}...len={len(self.token)})")
         try:
-            r = requests.get(f"{REST_BASE}/trading/v1/options/accounts",
-                             headers=self._headers(), timeout=20)
+            r = requests.get(url_acc, headers=self._headers(), timeout=20)
         except Exception as e:
             return (False, f"No pude contactar a Deriv (accounts): {e}")
-        if r.status_code == 401:
-            return (False, "Token inválido o sin permiso. Crea uno nuevo en "
-                           "app.deriv.com/account/api-token con permiso 'Trade'.")
+        cuerpo = (r.text or "")[:400]
+        self._log(f"[DERIV] accounts -> HTTP {r.status_code}: {cuerpo[:200]}")
         if r.status_code != 200:
-            return (False, f"Deriv respondió {r.status_code} al listar cuentas: {r.text[:200]}")
+            if r.status_code in (401, 403):
+                return (False, f"Deriv {r.status_code} (token/permiso): {cuerpo}  "
+                               "| Revisa que el token pat_ tenga el permiso 'Comercio/Trade', "
+                               "que no haya vencido, y que el App ID sea válido.")
+            return (False, f"Deriv respondió {r.status_code} al listar cuentas: {cuerpo}")
         try:
             cuentas = (r.json() or {}).get("data") or []
         except Exception as e:
