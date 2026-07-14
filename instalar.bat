@@ -34,12 +34,13 @@ echo.
 echo  Actualizando pip...
 python -m pip install --upgrade pip --user --no-cache-dir --quiet --disable-pip-version-check >nul 2>&1
 
-echo  Instalando el nucleo del bot (requests, iqoptionapi, websocket-client)...
-python -m pip install --user --no-cache-dir --disable-pip-version-check requests iqoptionapi "websocket-client>=1.0"
+echo  Instalando el nucleo (requests + websocket-client)...
+echo  [necesario para todo: panel, Deriv y actualizaciones]
+python -m pip install --user --no-cache-dir --disable-pip-version-check requests "websocket-client>=1.0"
 if errorlevel 1 (
     echo.
     echo  Reintentando sin --user...
-    python -m pip install --no-cache-dir --disable-pip-version-check requests iqoptionapi "websocket-client>=1.0"
+    python -m pip install --no-cache-dir --disable-pip-version-check requests "websocket-client>=1.0"
 )
 if errorlevel 1 (
     echo.
@@ -48,10 +49,21 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-echo  [OK] Nucleo del bot instalado.
+echo  [OK] Nucleo instalado.
 echo.
 
-echo  Instalando la ventana de escritorio (pywebview)...
+echo  Instalando soporte de IQ Option (opcional)...
+python -m pip install --user --no-cache-dir --disable-pip-version-check iqoptionapi >nul 2>&1
+if errorlevel 1 (
+    echo  [AVISO] No pude instalar iqoptionapi (puede fallar en Python muy nuevo).
+    echo          Podras usar DERIV (sinteticos) igual; IQ Option quedaria no
+    echo          disponible hasta instalarla. Si la necesitas, usa Python 3.12.
+) else (
+    echo  [OK] IQ Option disponible.
+)
+echo.
+
+echo  Instalando la ventana de escritorio pywebview (opcional)...
 python -m pip install --user --no-cache-dir --disable-pip-version-check "pywebview>=4.0" >nul 2>&1
 if errorlevel 1 (
     echo  [AVISO] No pude instalar pywebview (habitual en Python muy nuevo).

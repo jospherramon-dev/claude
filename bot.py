@@ -556,6 +556,11 @@ def _faltan_credenciales(cfg):
             return ("Falta el token de Deriv. En el panel, pega tu token de "
                     "Deriv (Settings → API token) y guarda la configuración.")
         return ""
+    if IQ_Option is None:
+        return ("El soporte de IQ Option no está instalado en este equipo "
+                "(la librería iqoptionapi). Puedes operar DERIV (sintéticos) "
+                "cambiando el bróker arriba, o instalar iqoptionapi (con "
+                "Python 3.12 suele funcionar mejor).")
     usuario  = (cfg.get("usuario") or "").strip()
     password = cfg.get("password") or ""
     if not usuario or not password:
