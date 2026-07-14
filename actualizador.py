@@ -186,9 +186,11 @@ def _instalar_dependencias():
         return
     try:
         import subprocess
+        # --user --no-cache-dir: mismas opciones que instalar.bat, para no
+        # chocar con el error de permisos de pip en Windows.
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", req,
-             "--quiet", "--disable-pip-version-check"],
+             "--user", "--no-cache-dir", "--quiet", "--disable-pip-version-check"],
             timeout=300,
         )
     except Exception:

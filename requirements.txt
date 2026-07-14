@@ -1,5 +1,7 @@
-# Dependencias de BOT JPH TRADING (app de escritorio)
+# Dependencias NUCLEO de BOT JPH TRADING (todo Python puro, instala sin fallar).
+# El auto-actualizador reinstala esta lista tras cada actualizacion, por eso
+# aqui NO va pywebview (que en algunos Python nuevos no compila): pywebview lo
+# instala instalar.bat aparte y es OPCIONAL — si falta, la app abre en el navegador.
 requests>=2.25
 iqoptionapi
-pywebview>=4.0
 websocket-client>=1.0   # conexión con Deriv (índices sintéticos)
