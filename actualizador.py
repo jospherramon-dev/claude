@@ -203,9 +203,14 @@ def reiniciar_app():
     Usamos subprocess.Popen + salida en vez de os.execv: en Windows, execv
     une los argumentos sin comillas y se rompe con rutas con espacios
     (p. ej. C:\\Users\\Jose Ramon\\...)."""
+    # Si nos lanzó abrir_app.bat (bucle), salimos con código 10 y el .bat
+    # se encarga de reabrir en la MISMA ventana (limpio, sin procesos sueltos
+    # que puedan cerrar la consola).
+    if os.environ.get("BOT_IFC_LOOP") == "1":
+        os._exit(10)
+    # Si no, reabrimos nosotros el proceso.
     import subprocess
     try:
-        # datos/ ya está separado; el bot recarga config al arrancar.
         script = os.path.abspath(sys.argv[0]) if sys.argv else ""
         args = [sys.executable] + ([script] + sys.argv[1:] if script else [])
         subprocess.Popen(args, cwd=BASE_DIR)
