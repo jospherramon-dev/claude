@@ -21,7 +21,7 @@ if errorlevel 1 (
 )
 
 echo  Instalando dependencias...
-pip install -r requirements.txt --quiet --disable-pip-version-check
+python -m pip install -r requirements.txt --user --no-cache-dir --quiet --disable-pip-version-check
 echo  Listo.
 echo.
 echo  Abriendo dashboard en tu navegador...
@@ -30,4 +30,9 @@ echo.
 
 python servidor.py
 
+echo.
+echo  --------------------------------------------
+echo  Si la ventana se cerro o viste un error, revisa
+echo  el archivo:  datos\arranque.log
+echo  --------------------------------------------
 pause

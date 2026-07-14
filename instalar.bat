@@ -62,14 +62,12 @@ if errorlevel 1 (
 )
 echo.
 
-:: --- 3) Localizar pythonw.exe (sin ventana de consola) -------------------
-for /f "delims=" %%P in ('python -c "import sys,os;print(os.path.join(os.path.dirname(sys.executable),'pythonw.exe'))"') do set "PYW=%%P"
-if not exist "!PYW!" set "PYW=pythonw.exe"
-
 :: --- 4) Crear acceso directo en el Escritorio ---------------------------
+:: El acceso directo abre abrir_app.bat, que elige solo entre ventana
+:: limpia (si hay pywebview) o consola visible con logs (si no).
 set "APPDIR=%~dp0"
-set "TARGET=!PYW!"
-set "ARGS=app_escritorio.py"
+set "TARGET=%APPDIR%abrir_app.bat"
+set "ARGS="
 set "ICON="
 if exist "%APPDIR%icono.ico" set "ICON=%APPDIR%icono.ico"
 
