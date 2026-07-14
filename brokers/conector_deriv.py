@@ -1,16 +1,23 @@
 # ============================================================
 #   conector_deriv.py — Conector para Deriv (índices sintéticos)
 #
-#   Expone LOS MISMOS métodos que el bot ya usa contra IQ Option
-#   (connect, check_connect, change_balance, get_balance,
-#   get_candles, buy, check_win_v3, get_all_*), pero por dentro
-#   habla con la API WebSocket de Deriv. Así el resto del bot no
-#   cambia: solo cambia QUIÉN es el cliente.
+#   Expone LOS MISMOS métodos que el bot ya usa (connect,
+#   check_connect, change_balance, get_balance, get_candles, buy,
+#   check_win_v3, get_all_*), pero por dentro habla con la API
+#   NUEVA de Deriv (Trading API v1). Así el resto del bot no cambia.
 #
-#   Deriv NO usa email/contraseña: usa un TOKEN de API que generas
-#   en tu cuenta (Settings -> API token). Para PRACTICAR, genera el
-#   token desde tu cuenta DEMO (virtual): este conector se NIEGA a
-#   operar en real si pediste modo PRÁCTICA, y viceversa.
+#   AUTENTICACIÓN NUEVA DE DERIV (2025+):
+#   Deriv reemplazó los tokens clásicos por Personal Access Tokens
+#   (empiezan por "pat_"). El flujo es:
+#     1) REST GET  /trading/v1/options/accounts        (lista cuentas)
+#     2) REST POST /trading/v1/options/accounts/{id}/otp  (pide OTP)
+#        -> devuelve una URL de WebSocket ya autenticada
+#     3) Conectar a esa URL y usar los mensajes de siempre
+#        (ticks_history, proposal, buy, proposal_open_contract...).
+#
+#   El token se crea en https://app.deriv.com/account/api-token con
+#   permiso "Trade". Para PRACTICAR, usa tu cuenta DEMO: este conector
+#   se NIEGA a operar en real si pediste modo Práctica, y viceversa.
 # ============================================================
 
 import json
@@ -18,19 +25,27 @@ import time
 import threading
 
 try:
+    import requests
+except Exception:
+    requests = None
+
+try:
     from websocket import create_connection
 except Exception:
     create_connection = None
 
+# Host REST de la API nueva de Deriv.
+REST_BASE = "https://api.derivws.com"
+
 # Índices sintéticos más comunes de Deriv. Puedes editar la lista desde
 # config ("pares_deriv"). Estos están abiertos 24/7.
 SIMBOLOS_DEFECTO = [
-    "R_10", "R_25", "R_50", "R_75", "R_100",          # Volatility
+    "R_10", "R_25", "R_50", "R_75", "R_100",            # Volatility
     "1HZ10V", "1HZ25V", "1HZ50V", "1HZ75V", "1HZ100V",  # Volatility (1s)
-    "BOOM300N", "BOOM500", "BOOM1000",                 # Boom
-    "CRASH300N", "CRASH500", "CRASH1000",              # Crash
-    "STPRNG",                                          # Step Index
-    "JD10", "JD25", "JD50", "JD75", "JD100",           # Jump
+    "BOOM300N", "BOOM500", "BOOM1000",                  # Boom
+    "CRASH300N", "CRASH500", "CRASH1000",               # Crash
+    "STPRNG",                                           # Step Index
+    "JD10", "JD25", "JD50", "JD75", "JD100",            # Jump
 ]
 
 
@@ -40,31 +55,38 @@ class ConectorDeriv:
         self.token = (token or "").strip()
         self.app_id = str(app_id or "1089").strip()
         self.modo = modo or "PRACTICE"
-        # Payout mínimo del contrato en % (0 = no bloquear, solo registrar).
-        # En Boom/Crash ir a favor de la deriva paga poco; este guard evita
-        # operar contratos cuyo retorno no compensa según tu configuración.
         self.payout_min = float(payout_min or 0)
         self._log = logger or (lambda *_a, **_k: None)
         self._simbolos = list(simbolos) if simbolos else list(SIMBOLOS_DEFECTO)
-        self.ultimo_payout_pct = None   # payout % del último proposal (visible para el bot)
+        self.ultimo_payout_pct = None
         self._ws = None
-        self._lock = threading.Lock()     # serializa peticiones sobre el socket
+        self._lock = threading.Lock()
         self._req_id = 0
-        self.loginid = None
-        self.is_virtual = None
+        # Datos de la cuenta activa (se rellenan al conectar)
+        self.account_id = None
+        self.account_type = None      # "demo" | "real"
+        self.is_virtual = None        # True si demo (compat con el resto)
         self.currency = "USD"
         self._balance = 0.0
 
-    # ── infraestructura ──────────────────────────────────────
-    def _url(self):
-        return f"wss://ws.derivws.com/websockets/v3?app_id={self.app_id}"
-
+    # ── helpers ──────────────────────────────────────────────
     def simbolos(self):
         return list(self._simbolos)
 
+    def _headers(self):
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Deriv-App-ID": self.app_id,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    def _quiere_demo(self):
+        return str(self.modo).upper() in ("PRACTICE", "DEMO", "VIRTUAL")
+
     def _enviar(self, payload, timeout=30):
-        """Envía una petición y devuelve la respuesta con el mismo req_id.
-        Descarta mensajes sueltos que no correspondan a esta petición."""
+        """Envía un mensaje por el WebSocket y devuelve la respuesta con el
+        mismo req_id. Ignora mensajes sueltos (suscripciones, etc.)."""
         if self._ws is None:
             raise RuntimeError("Deriv: no hay conexión abierta.")
         with self._lock:
@@ -85,37 +107,94 @@ class ConectorDeriv:
                     return data
             raise TimeoutError("Deriv: la petición no obtuvo respuesta a tiempo.")
 
-    # ── conexión (compatible con el flujo de IQ_Option) ──────
+    # ── conexión (flujo nuevo: REST -> OTP -> WebSocket) ─────
     def connect(self):
-        """Devuelve (ok, motivo), igual que IQ_Option.connect()."""
+        """Devuelve (ok, motivo), igual que antes. Hace el flujo REST+OTP
+        y abre el WebSocket ya autenticado."""
+        if requests is None:
+            return (False, "Falta la librería 'requests'. Reinstala las dependencias.")
         if create_connection is None:
-            return (False, "Falta la librería 'websocket-client'. Ejecuta instalar.bat de nuevo.")
+            return (False, "Falta 'websocket-client'. Ejecuta instalar.bat de nuevo.")
         if not self.token:
             return (False, "Falta el token de Deriv. Pégalo en Configuración.")
+        if not self.token.lower().startswith("pat_"):
+            self._log("[DERIV] Aviso: el token no empieza por 'pat_'. Deriv ahora usa "
+                      "Personal Access Tokens (pat_...). Si falla, crea uno nuevo en "
+                      "app.deriv.com/account/api-token con permiso Trade.")
+
+        # 1) Listar cuentas del token
         try:
-            # Si había un socket viejo (reconexión), lo cerramos.
-            try:
-                if self._ws is not None:
-                    self._ws.close()
-            except Exception:
-                pass
-            self._ws = create_connection(self._url(), timeout=30)
+            r = requests.get(f"{REST_BASE}/trading/v1/options/accounts",
+                             headers=self._headers(), timeout=20)
         except Exception as e:
-            return (False, f"No pude abrir conexión con Deriv: {e}")
+            return (False, f"No pude contactar a Deriv (accounts): {e}")
+        if r.status_code == 401:
+            return (False, "Token inválido o sin permiso. Crea uno nuevo en "
+                           "app.deriv.com/account/api-token con permiso 'Trade'.")
+        if r.status_code != 200:
+            return (False, f"Deriv respondió {r.status_code} al listar cuentas: {r.text[:200]}")
         try:
-            r = self._enviar({"authorize": self.token}, timeout=30)
+            cuentas = (r.json() or {}).get("data") or []
         except Exception as e:
-            return (False, f"Error autorizando en Deriv: {e}")
-        if "error" in r:
-            return (False, r["error"].get("message", "token de Deriv inválido"))
-        a = r.get("authorize", {}) or {}
-        self.loginid = a.get("loginid")
-        self.currency = a.get("currency", "USD") or "USD"
-        self.is_virtual = bool(a.get("is_virtual"))
+            return (False, f"Respuesta de cuentas ilegible: {e}")
+        if not cuentas:
+            return (False, "El token no tiene cuentas de opciones asociadas.")
+
+        # 2) Elegir la cuenta según el modo (demo/real) con blindaje
+        deseado = "demo" if self._quiere_demo() else "real"
+        elegida = None
+        for c in cuentas:
+            if str(c.get("account_type", "")).lower() == deseado:
+                elegida = c
+                break
+        if elegida is None:
+            tipos = ", ".join(sorted({str(c.get("account_type")) for c in cuentas}))
+            if deseado == "demo":
+                return (False, "No encontré una cuenta DEMO en tu token. Entra a Deriv, "
+                               "activa/usa tu cuenta demo (virtual) y reintenta. "
+                               f"(el token ve: {tipos})")
+            return (False, "No encontré una cuenta REAL en tu token. "
+                           f"(el token ve: {tipos})")
+
+        self.account_id = elegida.get("account_id")
+        self.account_type = str(elegida.get("account_type", "")).lower()
+        self.is_virtual = (self.account_type == "demo")
+        self.currency = elegida.get("currency", "USD") or "USD"
         try:
-            self._balance = float(a.get("balance") or 0)
+            self._balance = float(elegida.get("balance") or 0)
         except Exception:
             self._balance = 0.0
+        self._log(f"[DERIV] Cuenta {deseado} elegida: {self.account_id} "
+                  f"({self.currency}, saldo {self._balance}).")
+
+        # 3) Pedir OTP -> URL de WebSocket ya autenticada
+        try:
+            ro = requests.post(
+                f"{REST_BASE}/trading/v1/options/accounts/{self.account_id}/otp",
+                headers=self._headers(), timeout=20)
+        except Exception as e:
+            return (False, f"No pude pedir el OTP a Deriv: {e}")
+        if ro.status_code not in (200, 201):
+            return (False, f"Deriv respondió {ro.status_code} al pedir OTP: {ro.text[:200]}")
+        try:
+            ws_url = (ro.json() or {}).get("data", {}).get("url")
+        except Exception as e:
+            return (False, f"Respuesta de OTP ilegible: {e}")
+        if not ws_url:
+            return (False, "Deriv no devolvió la URL de WebSocket (OTP).")
+
+        # 4) Conectar al WebSocket (ya autenticado por el OTP en la URL)
+        try:
+            if self._ws is not None:
+                try:
+                    self._ws.close()
+                except Exception:
+                    pass
+            self._ws = create_connection(ws_url, timeout=30)
+        except Exception as e:
+            return (False, f"No pude abrir el WebSocket de Deriv: {e}")
+
+        self._log(f"[DERIV] WebSocket conectado (cuenta {self.account_type}).")
         return (True, "")
 
     def check_connect(self):
@@ -128,21 +207,21 @@ class ConectorDeriv:
             return False
 
     def change_balance(self, modo):
-        """Aplica el modo y BLINDA el demo: si el token es de una cuenta que
-        no coincide con el modo pedido, lanza error para NO operar por
+        """Aplica el modo y BLINDA el demo: la cuenta se elige en connect()
+        según el modo; aquí verificamos que coincida para no operar por
         error en la cuenta equivocada."""
         self.modo = modo
-        quiere_demo = str(modo).upper() in ("PRACTICE", "DEMO", "VIRTUAL")
-        if self.is_virtual is None:
-            return  # aún no autorizado; se validará tras connect()
-        if quiere_demo and not self.is_virtual:
+        if self.account_type is None:
+            return  # aún no conectado; se valida en connect()
+        quiere_demo = self._quiere_demo()
+        if quiere_demo and self.account_type != "demo":
             raise RuntimeError(
-                "El token de Deriv es de una cuenta REAL, pero pediste modo PRÁCTICA. "
-                "Genera el token desde tu cuenta DEMO (virtual) para practicar sin riesgo.")
-        if (not quiere_demo) and self.is_virtual:
+                "Pediste modo PRÁCTICA pero la cuenta conectada es REAL. "
+                "Reinicia el bot en modo Demo.")
+        if (not quiere_demo) and self.account_type != "real":
             raise RuntimeError(
-                "El token de Deriv es de una cuenta DEMO, pero pediste modo REAL. "
-                "Genera un token desde tu cuenta real para operar en real.")
+                "Pediste modo REAL pero la cuenta conectada es DEMO. "
+                "Reinicia el bot en modo Real (y usa un token con cuenta real).")
 
     def get_balance(self):
         try:
@@ -194,7 +273,9 @@ class ConectorDeriv:
             prop = self._enviar({
                 "proposal": 1, "amount": round(float(monto), 2), "basis": "stake",
                 "contract_type": ct, "currency": self.currency,
-                "duration": int(expiracion), "duration_unit": "m", "symbol": par,
+                "duration": int(expiracion), "duration_unit": "m",
+                # API NUEVA: el símbolo va en "underlying_symbol" (antes "symbol")
+                "underlying_symbol": par,
             }, timeout=20)
         except Exception as e:
             return (False, f"proposal falló: {e}")
@@ -207,8 +288,6 @@ class ConectorDeriv:
             return (False, "Deriv no devolvió id de proposal")
 
         # ── GUARD DE PAYOUT ──────────────────────────────────
-        # payout% = lo que GANAS neto si aciertas, relativo a lo apostado.
-        # Ej: apuestas 10 y el contrato paga 19.50 -> payout 95%.
         try:
             pago_total = float(p.get("payout") or 0)
             costo = float(ask or 0)
@@ -221,6 +300,7 @@ class ConectorDeriv:
                                    f"{self.payout_min:.0f}% (deriv_payout_min) — entrada descartada")
         except Exception:
             pass
+
         try:
             b = self._enviar({"buy": pid, "price": ask}, timeout=20)
         except Exception as e:
@@ -234,7 +314,7 @@ class ConectorDeriv:
 
     def check_win_v3(self, contract_id):
         """Espera a que el contrato cierre y devuelve la ganancia NETA
-        (positiva si ganó, negativa si perdió), igual que IQ Option."""
+        (positiva si ganó, negativa si perdió). 'profit' viene como texto."""
         fin = time.time() + 60 * 60
         while time.time() < fin:
             try:
@@ -251,7 +331,6 @@ class ConectorDeriv:
             time.sleep(2)
         return 0.0
 
-    # También aceptamos check_win_v2 / check_win por si alguna ruta lo llama.
     check_win_v2 = check_win_v3
 
     # ── descubrimiento de activos (formas compatibles) ───────
@@ -268,16 +347,11 @@ class ConectorDeriv:
         return {"binary": {"actives": dict(actives)},
                 "turbo":  {"actives": dict(actives)}}
 
-    # Alias por compatibilidad
     get_all_init = get_all_init_v2
 
     def get_all_open_time(self):
-        # Los sintéticos operan 24/7: todos abiertos.
         d = {s: {"open": True} for s in self._simbolos}
         return {"turbo": dict(d), "binary": dict(d), "digital": dict(d)}
 
     def get_all_profit(self):
-        # El payout de sintéticos varía por contrato; v1 lo deja vacío
-        # (el bot cae a sus valores por defecto). Se puede calcular vía
-        # proposal en una versión futura.
         return {}

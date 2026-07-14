@@ -12,14 +12,22 @@ Cada bróker guarda sus propias credenciales y su propia lista de pares.
 
 ## 1) Crear cuenta y token en Deriv
 
+> **Nota (2025+):** Deriv cambió su sistema de tokens. Ahora genera **Personal
+> Access Tokens** que empiezan por **`pat_`** y tienen fecha de vencimiento
+> (máx. 90 días). El bot ya está actualizado a este sistema nuevo.
+
 1. Crea tu cuenta en https://deriv.com (si aún no la tienes).
-2. Entra y **usa tu cuenta DEMO (virtual)** para practicar — trae saldo ficticio.
-3. Ve a **Settings → API token** (o `https://app.deriv.com/account/api-token`).
-4. Crea un token con permisos **Read**, **Trade** (y **Payments** solo si operarás real).
-5. **Importante:** genera el token estando en tu cuenta **DEMO (virtual)** para practicar.
-   El bot se **niega a operar en real si elegiste modo Práctica** (y al revés), para
-   que nunca operes por error en la cuenta equivocada.
-6. Copia el token.
+2. Entra a **https://app.deriv.com/account/api-token**.
+3. Rellena:
+   - **Nombre del token:** por ejemplo `jphbot`.
+   - **Permisos:** marca **Comercio (Trade)**. (Con eso basta para operar.)
+   - **Vencimiento:** el que quieras (máx. 90 días; cuando caduque, creas otro).
+4. Pulsa **Crear token** y **copia** el token (`pat_...`). Deriv lo muestra una
+   sola vez, así que guárdalo.
+5. **No hace falta elegir demo o real al crear el token:** el bot elige
+   automáticamente tu cuenta **demo** o **real** según el **Modo** que pongas en
+   el panel, y se **niega a operar en real si elegiste modo Práctica** (y al
+   revés). Solo asegúrate de tener tu cuenta demo activa en Deriv.
 
 ---
 
