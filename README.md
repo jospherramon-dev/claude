@@ -90,6 +90,16 @@ Esa carpeta **no se sube a GitHub** ni se pierde al actualizar.
 | `instalar.bat` | Instalador (dependencias + acceso directo) |
 | `VERSION` | Número de versión actual |
 | `iniciar.bat` | Arranque alternativo en el navegador (sin ventana propia) |
+| `scripts_iqoption/soportes_resistencias_fuerza.lua` | Indicador de S/R por fuerza para el gráfico de IQ Option |
+
+## Indicador de soportes y resistencias para el gráfico
+
+En `scripts_iqoption/` hay un indicador en **Lua** para pegar en IQ Option
+(Indicadores → Scripts). Dibuja los soportes y resistencias vivos y los pinta
+según su fuerza: **rojo** = muy fuerte (4+ toques), **verde** = medio (3 toques),
+**amarillo** = débil (1–2 toques). Usa la misma lógica de toques que el bot.
+
+Guía completa: **`docs/SCRIPT_SR_IQOPTION.md`**.
 
 ## Arranque alternativo (sin ventana propia)
 

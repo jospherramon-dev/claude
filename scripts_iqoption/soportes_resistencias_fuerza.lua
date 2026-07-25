@@ -1,0 +1,374 @@
+-- =====================================================================
+--  SOPORTES Y RESISTENCIAS POR FUERZA  ·  BOT JPH TRADING
+--  Plataforma : IQ Option  —  Quadcode Script (QCS, basado en Lua 5.3)
+--  Instalación: Gráfico → Indicadores → Scripts → Crear/Editar script →
+--               pegar TODO este archivo → Guardar → Aplicar.
+-- =====================================================================
+--
+--  QUÉ DIBUJA
+--  ----------
+--  Una línea horizontal en cada nivel de soporte / resistencia vivo.
+--  El COLOR y el GROSOR cambian según la FUERZA del nivel, medida en
+--  número de TOQUES válidos:
+--
+--      >= 4 toques  →  ROJO      (muy fuerte)
+--      == 3 toques  →  VERDE     (medio)
+--      <= 2 toques  →  AMARILLO  (débil)
+--
+--  Los umbrales, los colores y los grosores se cambian desde los ajustes
+--  del indicador (el icono del engranaje), no hace falta tocar el código.
+--
+--  CÓMO CUENTA LA FUERZA (misma lógica que usa el bot en bot.py)
+--  -------------------------------------------------------------
+--   1. El nivel nace en un PIVOTE confirmado (máximo/mínimo rodeado de
+--      "izq" velas a la izquierda y "der" velas a la derecha).
+--   2. Cada vez que el precio vuelve a la zona del nivel y se va, suma
+--      1 toque. Para que cuente como toque NUEVO tienen que haber pasado
+--      al menos "sep" velas desde el toque anterior: una congestión de
+--      velas pegadas al nivel es UN solo toque, no diez.
+--   3. Si el rechazo deja una MECHA larga contra el nivel, suma puntos
+--      extra (por defecto +1): un rechazo con mecha vale más que un roce.
+--   4. Si el precio CIERRA claramente al otro lado, el nivel se da por
+--      roto: desaparece y (opcional) cambia de rol — una resistencia
+--      rota pasa a ser soporte conservando su fuerza.
+--   5. Un nivel que lleva "vida" velas sin ser tocado caduca y se borra
+--      para dejar sitio a niveles vigentes.
+--
+--  NO REPINTA: cada línea empieza a dibujarse en la vela en la que el
+--  nivel queda confirmado, nunca hacia atrás. Lo que ves en el pasado es
+--  lo que el indicador veía en ese momento.
+--
+--  Se vigilan hasta 6 resistencias y 6 soportes a la vez (los más
+--  fuertes / más recientes). Un nivel nuevo solo desplaza a uno viejo si
+--  es más fuerte que el más débil que haya en pantalla.
+-- =====================================================================
+
+instrument {
+    name = "S/R por Fuerza (JPH)",
+    short_name = "S/R JPH",
+    overlay = true                       -- se dibuja SOBRE las velas
+}
+
+-- ---------------------------------------------------------------------
+--  1) AJUSTES DEL USUARIO
+-- ---------------------------------------------------------------------
+izq      = input(3,     "Velas a la izquierda del pivote",       input.integer, 1, 20, 1)
+der      = input(3,     "Velas a la derecha (confirmación)",     input.integer, 1, 20, 1)
+atr_p    = input(14,    "Período ATR (ancho de zona)",           input.integer, 2, 200, 1)
+zona_k   = input(0.35,  "Ancho de zona del nivel (x ATR)",       input.double, 0.05, 3.0, 0.05)
+sep      = input(3,     "Velas mínimas entre toques",            input.integer, 1, 50, 1)
+vida     = input(400,   "Caducidad sin toques (velas)",          input.integer, 20, 5000, 10)
+rup_k    = input(0.30,  "Ruptura: cierre más allá (x ATR)",      input.double, 0.0, 3.0, 0.05)
+girar    = input(true,  "Nivel roto cambia de rol (S <-> R)",    input.boolean)
+max_niv  = input(6,     "Máximo de niveles por lado",            input.integer, 1, 6, 1)
+min_t    = input(1,     "Toques mínimos para dibujar el nivel",  input.integer, 1, 10, 1)
+t_med    = input(3,     "Toques para nivel MEDIO",               input.integer, 2, 20, 1)
+t_fue    = input(4,     "Toques para nivel MUY FUERTE",          input.integer, 2, 30, 1)
+mecha_k  = input(0.5,   "Mecha de rechazo (x rango de la vela)", input.double, 0.0, 1.0, 0.05)
+mecha_p  = input(1,     "Puntos extra por rechazo con mecha",    input.integer, 0, 3, 1)
+extender = input(false, "Extender niveles a todo el gráfico",    input.boolean)
+
+input_group {
+    "Colores por fuerza",
+    col_fuerte = input { default = "#FF3B30", type = input.color },        -- muy fuerte
+    col_medio  = input { default = "#25E154", type = input.color },        -- medio
+    col_debil  = input { default = "#FFD400", type = input.color },        -- débil
+    gr_fuerte  = input { default = 3, type = input.line_width },
+    gr_medio   = input { default = 2, type = input.line_width },
+    gr_debil   = input { default = 1, type = input.line_width },
+    ver_res    = input { default = true, type = input.plot_visibility },   -- ver resistencias
+    ver_sop    = input { default = true, type = input.plot_visibility }    -- ver soportes
+}
+
+-- ---------------------------------------------------------------------
+--  2) UTILIDADES (sin dependencias: todo con números Lua normales)
+-- ---------------------------------------------------------------------
+local RANURAS = 6                        -- niveles vigilados por lado
+
+local function mayor(a, b)  if a > b then return a end return b end
+local function menor(a, b)  if a < b then return a end return b end
+local function absoluto(a)  if a < 0 then return -a end return a end
+
+-- Valor de una serie en la vela actual; 'defecto' si no hay valor (nan).
+local function valor(serie, defecto)
+    local v = get_value(serie)
+    if v == nil then return defecto end
+    if v ~= v then return defecto end    -- nan
+    return v
+end
+
+-- ---------------------------------------------------------------------
+--  3) MEMORIA DEL INDICADOR
+--     El script se ejecuta una vez por vela, así que el estado que debe
+--     sobrevivir de una vela a otra se guarda en series (make_series).
+--     Por ranura se guardan: precio del nivel, toques acumulados, velas
+--     sin ser tocado, y la serie que realmente se dibuja.
+--     Se crean de forma explícita (sin bucles) para que el motor las
+--     identifique siempre igual en cada vela.
+-- ---------------------------------------------------------------------
+local function ranura(precio, toques, quieto, linea)
+    return { precio = precio, toques = toques, quieto = quieto, linea = linea }
+end
+
+local atr_s = make_series("atr_interno")
+
+local RES = {}
+RES[1] = ranura(make_series("r1_precio"), make_series("r1_toques"), make_series("r1_quieto"), make_series("r1_linea"))
+RES[2] = ranura(make_series("r2_precio"), make_series("r2_toques"), make_series("r2_quieto"), make_series("r2_linea"))
+RES[3] = ranura(make_series("r3_precio"), make_series("r3_toques"), make_series("r3_quieto"), make_series("r3_linea"))
+RES[4] = ranura(make_series("r4_precio"), make_series("r4_toques"), make_series("r4_quieto"), make_series("r4_linea"))
+RES[5] = ranura(make_series("r5_precio"), make_series("r5_toques"), make_series("r5_quieto"), make_series("r5_linea"))
+RES[6] = ranura(make_series("r6_precio"), make_series("r6_toques"), make_series("r6_quieto"), make_series("r6_linea"))
+
+local SOP = {}
+SOP[1] = ranura(make_series("s1_precio"), make_series("s1_toques"), make_series("s1_quieto"), make_series("s1_linea"))
+SOP[2] = ranura(make_series("s2_precio"), make_series("s2_toques"), make_series("s2_quieto"), make_series("s2_linea"))
+SOP[3] = ranura(make_series("s3_precio"), make_series("s3_toques"), make_series("s3_quieto"), make_series("s3_linea"))
+SOP[4] = ranura(make_series("s4_precio"), make_series("s4_toques"), make_series("s4_quieto"), make_series("s4_linea"))
+SOP[5] = ranura(make_series("s5_precio"), make_series("s5_toques"), make_series("s5_quieto"), make_series("s5_linea"))
+SOP[6] = ranura(make_series("s6_precio"), make_series("s6_toques"), make_series("s6_quieto"), make_series("s6_linea"))
+
+-- Series auxiliares: se piden SIEMPRE (nunca dentro de un if) para que
+-- el motor las calcule de forma estable en todas las velas.
+local ventana    = izq + der + 1
+local techo_vent = highest(high, ventana)   -- máximo de la ventana
+local piso_vent  = lowest(low, ventana)     -- mínimo de la ventana
+local piv_alto   = high[der]                -- vela candidata a pivote
+local piv_bajo   = low[der]
+local cierre_ant = close[1]
+
+-- ---------------------------------------------------------------------
+--  4) DATOS DE LA VELA ACTUAL
+-- ---------------------------------------------------------------------
+local hi  = valor(high,  nil)
+local lo  = valor(low,   nil)
+local cl  = valor(close, nil)
+local ab  = valor(open,  nil)
+local cl1 = valor(cierre_ant, cl)
+
+local hay_datos = (hi ~= nil) and (lo ~= nil) and (cl ~= nil) and (ab ~= nil)
+
+-- ATR propio (media de Wilder) para medir el ancho de la zona del nivel
+local atr_v = valor(atr_s[1], nil)
+if hay_datos then
+    local rango = hi - lo
+    local tr    = mayor(rango, mayor(absoluto(hi - cl1), absoluto(lo - cl1)))
+    if atr_v == nil then
+        atr_v = tr
+    else
+        atr_v = atr_v + (tr - atr_v) / atr_p
+    end
+    atr_s:set(atr_v)
+end
+
+-- Media zona: a cuánta distancia del precio del nivel se considera "toque"
+local tol = 0
+if atr_v ~= nil then tol = atr_v * zona_k end
+if tol <= 0 and cl ~= nil then tol = cl * 0.0005 end
+
+-- ---------------------------------------------------------------------
+--  5) ESTADO DE LAS RANURAS EN ESTA VELA (tablas Lua normales)
+-- ---------------------------------------------------------------------
+local function cargar(pool)
+    local lista = {}
+    for i = 1, RANURAS do
+        lista[i] = {
+            precio = valor(pool[i].precio[1], nil),   -- nil = ranura libre
+            toques = valor(pool[i].toques[1], 0),
+            quieto = valor(pool[i].quieto[1], 0),
+            nuevo  = false                            -- creado en esta vela
+        }
+    end
+    return lista
+end
+
+local L_RES = cargar(RES)
+local L_SOP = cargar(SOP)
+
+-- ---------------------------------------------------------------------
+--  6) ALTA / FUSIÓN DE NIVELES
+--     modo_suma = true  → fusionar suma toques (pivote nuevo en la zona)
+--     modo_suma = false → fusionar conserva el mayor (nivel que gira)
+-- ---------------------------------------------------------------------
+local function insertar(lista, precio, toques, modo_suma)
+    local tope = menor(max_niv, RANURAS)      -- ranuras que el usuario permite
+
+    -- ¿ya existe un nivel en esa misma zona? → fusionar
+    for i = 1, tope do
+        local n = lista[i]
+        if n.precio ~= nil and absoluto(n.precio - precio) <= tol then
+            if modo_suma then
+                if n.quieto >= sep then                       -- toque separado
+                    local previos = n.toques
+                    n.toques = n.toques + toques
+                    n.precio = (n.precio * previos + precio) / (previos + 1)
+                end
+            else
+                n.toques = mayor(n.toques, toques)
+            end
+            n.quieto = 0
+            return
+        end
+    end
+
+    -- ¿hay una ranura libre?
+    for i = 1, tope do
+        if lista[i].precio == nil then
+            lista[i] = { precio = precio, toques = toques, quieto = 0, nuevo = true }
+            return
+        end
+    end
+
+    -- Todas ocupadas: solo entra si es más fuerte que el nivel más flojo.
+    -- Prioridad = toques penalizados por el tiempo que llevan sin tocarse.
+    local peor, peor_i = nil, nil
+    for i = 1, tope do
+        local p = lista[i].toques - (lista[i].quieto / vida)
+        if peor == nil or p < peor then
+            peor, peor_i = p, i
+        end
+    end
+    if peor ~= nil and toques > peor then
+        lista[peor_i] = { precio = precio, toques = toques, quieto = 0, nuevo = true }
+    end
+end
+
+-- ---------------------------------------------------------------------
+--  7) MANTENIMIENTO: toques, rupturas y caducidad
+-- ---------------------------------------------------------------------
+local rotos = {}          -- niveles rotos que pueden cambiar de rol
+
+local function actualizar(lista, es_resistencia)
+    for i = 1, RANURAS do
+        local n = lista[i]
+        if n.precio ~= nil then
+            local techo_zona = n.precio + tol
+            local piso_zona  = n.precio - tol
+            local toca       = (hi >= piso_zona) and (lo <= techo_zona)
+            local roto
+
+            if es_resistencia then
+                roto = cl > techo_zona + atr_v * rup_k    -- cierre por encima
+            else
+                roto = cl < piso_zona - atr_v * rup_k     -- cierre por debajo
+            end
+
+            if roto then
+                if girar then
+                    rotos[#rotos + 1] = {
+                        resistencia = not es_resistencia, -- cambia de rol
+                        precio      = n.precio,
+                        toques      = n.toques
+                    }
+                end
+                lista[i] = { precio = nil, toques = 0, quieto = 0, nuevo = false }
+
+            elseif toca then
+                if n.quieto >= sep then                   -- toque NUEVO
+                    local extra = 0
+                    local rango = hi - lo
+                    if rango > 0 and mecha_p > 0 then
+                        if es_resistencia then
+                            local cuerpo = mayor(ab, cl)
+                            -- mecha larga por arriba y cierre por debajo del nivel
+                            if (hi - cuerpo) >= mecha_k * rango and cl < n.precio then
+                                extra = mecha_p
+                            end
+                        else
+                            local cuerpo = menor(ab, cl)
+                            -- mecha larga por abajo y cierre por encima del nivel
+                            if (cuerpo - lo) >= mecha_k * rango and cl > n.precio then
+                                extra = mecha_p
+                            end
+                        end
+                    end
+                    local previos  = n.toques
+                    local referido = es_resistencia and hi or lo
+                    n.toques = n.toques + 1 + extra
+                    n.precio = (n.precio * previos + referido) / (previos + 1)
+                end
+                n.quieto = 0
+
+            else
+                n.quieto = n.quieto + 1
+                if n.quieto > vida then                   -- nivel caducado
+                    lista[i] = { precio = nil, toques = 0, quieto = 0, nuevo = false }
+                end
+            end
+        end
+    end
+end
+
+if hay_datos and atr_v ~= nil then
+    actualizar(L_RES, true)
+    actualizar(L_SOP, false)
+
+    -- Niveles rotos que cambian de rol (resistencia rota → soporte y al revés)
+    for k = 1, #rotos do
+        local r = rotos[k]
+        if r.resistencia then
+            insertar(L_RES, r.precio, r.toques, false)
+        else
+            insertar(L_SOP, r.precio, r.toques, false)
+        end
+    end
+
+    -- -----------------------------------------------------------------
+    --  8) PIVOTES CONFIRMADOS → niveles nuevos (o refuerzo de los vivos)
+    --     La vela candidata es la de hace "der" velas: ya tiene "der"
+    --     velas a la derecha, por eso el nivel no se repinta.
+    -- -----------------------------------------------------------------
+    local ph  = valor(piv_alto, nil)
+    local pl  = valor(piv_bajo, nil)
+    local mx  = valor(techo_vent, nil)
+    local mn  = valor(piso_vent, nil)
+
+    if ph ~= nil and mx ~= nil and ph >= mx then
+        insertar(L_RES, ph, 1, true)         -- máximo de toda la ventana
+    end
+    if pl ~= nil and mn ~= nil and pl <= mn then
+        insertar(L_SOP, pl, 1, true)         -- mínimo de toda la ventana
+    end
+end
+
+-- ---------------------------------------------------------------------
+--  9) GUARDAR ESTADO Y DIBUJAR
+--     El color y el grosor se eligen vela a vela según la fuerza, así
+--     que un nivel que se refuerza cambia de amarillo → verde → rojo.
+-- ---------------------------------------------------------------------
+local function pintar(pool, lista, visible, etiqueta)
+    for i = 1, RANURAS do
+        local n = lista[i]
+        local color  = col_debil
+        local grosor = gr_debil
+
+        if n.precio ~= nil then
+            pool[i].precio:set(n.precio)
+            pool[i].toques:set(n.toques)
+            pool[i].quieto:set(n.quieto)
+
+            if n.toques >= t_fue then
+                color, grosor = col_fuerte, gr_fuerte
+            elseif n.toques >= t_med then
+                color, grosor = col_medio, gr_medio
+            end
+
+            -- En la vela de creación no se dibuja: así la línea del nivel
+            -- anterior queda cortada y no aparece un salto en diagonal.
+            if (not n.nuevo) and n.toques >= min_t then
+                pool[i].linea:set(n.precio)
+            end
+        end
+        -- Ranura libre → no se escribe nada → hueco (nan) → sin línea.
+
+        if visible then
+            plot(pool[i].linea, etiqueta .. i, color, grosor, 0, style.solid_line, na_mode.restart)
+            if extender then
+                hline(pool[i].linea, etiqueta .. i .. " nivel", color, grosor)
+            end
+        end
+    end
+end
+
+pintar(RES, L_RES, ver_res, "R")
+pintar(SOP, L_SOP, ver_sop, "S")
