@@ -4,7 +4,13 @@ Script en **Lua** (Quadcode Script, el lenguaje de indicadores de IQ Option) que
 dibuja sobre el gráfico los soportes y resistencias vivos y **los colorea según
 su fuerza**.
 
-Archivo: [`scripts_iqoption/soportes_resistencias_fuerza.lua`](../scripts_iqoption/soportes_resistencias_fuerza.lua)
+Archivos:
+
+- [`scripts_iqoption/soportes_resistencias_fuerza.lua`](../scripts_iqoption/soportes_resistencias_fuerza.lua) — el indicador.
+- [`scripts_iqoption/soportes_resistencias_fuerza.txt`](../scripts_iqoption/soportes_resistencias_fuerza.txt) — **el mismo código en .txt**, para
+  abrirlo en el bloc de notas del móvil y copiarlo entero. Es solo código: no
+  lleva nada alrededor, así que *seleccionar todo → copiar → pegar* funciona
+  tal cual.
 
 | Fuerza del nivel | Toques | Color | Grosor |
 |---|---|---|---|
@@ -28,8 +34,16 @@ ajustes del indicador — no hace falta tocar el código.
 5. **Guardar** → **Aplicar**. El indicador aparece como
    **“S/R por Fuerza (JPH)”** dibujado encima de las velas.
 
-> El editor de scripts está disponible en la web y en la app de escritorio.
-> En la app de móvil se pueden **usar** los scripts guardados, pero no crearlos.
+### Desde el móvil
+
+Abre `soportes_resistencias_fuerza.txt` en el bloc de notas del teléfono,
+**mantén pulsado → Seleccionar todo → Copiar**, y pega en el editor de scripts
+de IQ Option.
+
+> Si en la app del móvil no encuentras la opción de **crear** scripts (según la
+> versión, ahí solo se pueden usar los ya guardados), entra a `iqoption.com`
+> desde el navegador del teléfono, pega el script allí y quedará guardado en tu
+> cuenta: después ya lo puedes aplicar desde la app.
 
 Para cambiar ajustes: icono del **engranaje** junto al nombre del indicador.
 
